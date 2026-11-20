@@ -127,6 +127,12 @@ local function resolveHolder()
         if ok and v ~= nil then return v end
         return nil
     end
+    if type(gethui) == "function" then
+        local h = try(gethui); if h then return h end
+    end
+    if type(get_hidden_gui) == "function" then
+        local h = try(get_hidden_gui); if h then return h end
+    end
     local h = try(function()
         local lp = game:GetService("Players").LocalPlayer
         if not lp then return nil end
@@ -141,8 +147,6 @@ local function resolveHolder()
         return nil
     end) end
     if h then return h end
-    if type(gethui) == "function" then h = try(gethui); if h then return h end end
-    if type(get_hidden_gui) == "function" then h = try(get_hidden_gui); if h then return h end end
     h = try(function() return game:GetService("CoreGui") end); if h then return h end
     return nil
 end
@@ -198,11 +202,11 @@ function Axiom.CreateWindow(opts)
     opts = opts or {}
     local self = setmetatable({ _rows = 0 }, Axiom)
     local gui = inst("ScreenGui", nil, { Name = "AxiomUI", ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 10 })
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100000 })
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
-    local W, H = 690, 480
+    local W, H = 620, 440
     local main = inst("Frame", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
         Position = UDim2.new(0.5, -W/2, 0.5, -H/2), BackgroundColor3 = C.Bg,
         BorderSizePixel = 0, ZIndex = 1 })
@@ -269,8 +273,10 @@ function Axiom.CreateWindow(opts)
         local y = 92 + (self._rows - 1) * 52
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
         if type(o.Callback) == "function" then obj._cb = o.Callback end
+        local iconTop = (kind == "Paragraph") and (y + 21)
+            or (((o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")) and (y + 16) or (y + 8))
         local ci = inst("ImageLabel", detail, { Size = UDim2.fromOffset(16, 16),
-            Position = UDim2.fromOffset(24, y + 10), BackgroundTransparency = 1, ZIndex = 3 })
+            Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
         local tx = label(detail, o.Title or kind, 13, C.Text, true)
         tx.Size = UDim2.fromOffset(210, 20); tx.Position = UDim2.fromOffset(46, y + 6); tx.ZIndex = 3
@@ -293,8 +299,21 @@ function Axiom.CreateWindow(opts)
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
             corner(kn, 9)
             local function refresh()
-                tr.BackgroundColor3 = on and C.Accent or C.Track
-                kn.Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
+                local bg = on and C.Accent or C.Track
+                local kp = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
+                local done = false
+                pcall(function()
+                    local ts = game:GetService("TweenService")
+                    if not ts then return end
+                    local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                    ts:Create(tr, ti, { BackgroundColor3 = bg }):Play()
+                    ts:Create(kn, ti, { Position = kp }):Play()
+                    done = true
+                end)
+                if not done then
+                    tr.BackgroundColor3 = bg
+                    kn.Position = kp
+                end
             end
             connect(tr.MouseButton1Click, function()
                 on = not on; obj.Value = on; refresh(); emit(obj, on)
@@ -304,9 +323,13 @@ function Axiom.CreateWindow(opts)
         elseif kind == "Button" then
             local b = inst("TextButton", detail, { Size = UDim2.fromOffset(96, 28),
                 Position = UDim2.fromOffset(rx - 96, y + 6), BackgroundColor3 = C.Accent,
-                BorderSizePixel = 0, Text = o.Title or "Apply", TextSize = 12, Font = FONT_B,
-                TextColor3 = Color3.new(1,1,1), AutoButtonColor = false, ZIndex = 3 })
-            corner(b, 7); grad(b, C.Accent, C.Accent2, 0)
+                BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
+            corner(b, 7)
+            local bfill = inst("Frame", b, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Accent,
+                BorderSizePixel = 0, ZIndex = 3 })
+            corner(bfill, 7); grad(bfill, C.Accent, C.Accent2, 0)
+            local btxt = label(b, o.Title or "Apply", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+            btxt.Size = UDim2.fromScale(1, 1); btxt.ZIndex = 5
             connect(b.MouseButton1Click, function() emit(obj, nil) end)
             function obj:Fire() emit(obj, nil) end
         elseif kind == "Slider" then
@@ -320,12 +343,8 @@ function Axiom.CreateWindow(opts)
             local fl = inst("Frame", tr, { Size = UDim2.fromScale(clamp(pct0, 0.03, 1), 1),
                 BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 4 })
             corner(fl, 3)
-            local knob = inst("Frame", fl, { Size = UDim2.fromOffset(11, 11),
-                Position = UDim2.new(1, -5, 0.5, 0), AnchorPoint = Vector2.new(1, 0.5),
-                BackgroundColor3 = C.Text, BorderSizePixel = 0, ZIndex = 5 })
-            corner(knob, 5)
             local vv = label(detail, tostring(math.floor(val)), 12, C.Accent, true, Enum.TextXAlignment.Right)
-            vv.Size = UDim2.fromOffset(38, 20); vv.Position = UDim2.fromOffset(rx - 40, y + 6); vv.ZIndex = 3
+            vv.Size = UDim2.fromOffset(38, 20); vv.Position = UDim2.fromOffset(rx - 40, y + 12); vv.ZIndex = 3
             local dragging = false
             local function applyVal(v, fire)
                 val = clamp(v, minN, maxN)
@@ -446,9 +465,6 @@ function Axiom.CreateWindow(opts)
             function obj:SetValue(v) cur = v or C.Accent; sw.BackgroundColor3 = cur; obj.Value = cur end
             function obj:Get() return cur end
         end
-        local line = inst("Frame", detail, { Size = UDim2.fromOffset(W - 176 - 48, 1),
-            Position = UDim2.fromOffset(24, y + 46), BackgroundColor3 = C.Line,
-            BackgroundTransparency = 0.6, BorderSizePixel = 0, ZIndex = 2 })
         function obj:Callback(fn) obj._cb = fn; return obj end
         return obj
     end
