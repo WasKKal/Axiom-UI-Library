@@ -4,6 +4,8 @@
 
 ## 视觉与动效
 
+- **主 UI 壁纸**：`CreateWindow({ Background = "图片URL" })` 启用壁纸，`ScaleType.Crop` 自动裁剪填充 + `UICorner` 圆角 + 暗化遮罩；壁纸仅在**主 UI 内容层**内，登录页不显示。http(s) 图片优先缓存为本地文件并用 `getcustomasset` 转 asset，失败回退原 URL。默认仓库自带 `axiom-background.jpg`。
+- **资源门控**：图标模块与背景图等资源**全部就绪后主窗口才淡入**，避免闪烁/空白；带 8 秒超时兜底，网络异常也不会卡住不显示。
 - **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.65`，视觉尺寸缩小约三分之一且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
 - **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。切换时旧蓝白渐变条缩短渐隐、新条伸长渐显。
 - **登录页加载动画**：点击`加载脚本`后不立即切换——文字向左微移，右侧浮现持续旋转的 `loader-circle`，随机等待 **1.5–2.5 秒**后才开始渐隐进入主界面；加载期间按钮锁定防重复点击。
@@ -19,6 +21,7 @@
 |---|---|
 | `Axiom.lua` | 独立库文件（ModuleScript，结尾 `return Axiom`） |
 | `Axiom_Example.lua` | 示例：通过 HttpGet 加载独立库并建窗 |
+| `axiom-background.jpg` | 示例用主 UI 壁纸（红色战斗场景），raw URL 直接作为 `Background` |
 
 图标首次加载后缓存到执行器的 `lucide-icon-latest/` 文件夹（模块 `init.lua` + 各图标 PNG），后续启动**优先读本地**，无需重复联网。
 
@@ -54,7 +57,16 @@ local Win = Axiom.CreateWindow({ Title = "AXIOM" })
 
 ### `Axiom.CreateWindow(opts)`
 
-`opts`：`Title`（标题栏/详情标题）、`Info`（详情副标题）。返回 `Window`。
+`opts`：`Title`（标题栏/详情标题）、`Info`（详情副标题）、`Background`（主 UI 壁纸图片 URL，可选）。返回 `Window`。
+
+```lua
+local Win = Axiom.CreateWindow({
+    Title = "AXIOM",
+    Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
+})
+```
+
+壁纸自动裁剪填充并带圆角，仅在主 UI 内容区显示（登录页/启动页不显示）；有壁纸时侧栏自动半透明透出背景。窗口会等图标与壁纸资源就绪后才淡入。
 
 ### `Window:AddTab(name, icon)`
 
