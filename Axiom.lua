@@ -242,22 +242,29 @@ local function fadeAny(o, to, dur, cb)
         if type(cb) == "function" then pcall(cb) end
     end
 end
--- 通用补间：对实例 o 的多个属性同时补间到 goal，带 pcall 兜底（失败立即设值）
-local function tweenProp(o, goal, dur, cb)
+-- 通用补间：对实例 o 的多个属性同时补间到 goal，带 pcall 兜底（失败立即设值）；delay 用于动画顺序错峰
+local function tweenProp(o, goal, dur, cb, delay)
     if not o then return end
-    local done = false
-    pcall(function()
-        local ts = game:GetService("TweenService")
-        if not ts then return end
-        local ti = TweenInfo.new(dur or 0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tw = ts:Create(o, ti, goal)
-        if type(cb) == "function" then tw.Completed:Connect(cb) end
-        tw:Play()
-        done = true
-    end)
-    if not done then
-        pcall(function() for k, v in pairs(goal) do o[k] = v end end)
-        if type(cb) == "function" then pcall(cb) end
+    local function run()
+        local done = false
+        pcall(function()
+            local ts = game:GetService("TweenService")
+            if not ts then return end
+            local ti = TweenInfo.new(dur or 0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local tw = ts:Create(o, ti, goal)
+            if type(cb) == "function" then tw.Completed:Connect(cb) end
+            tw:Play()
+            done = true
+        end)
+        if not done then
+            pcall(function() for k, v in pairs(goal) do o[k] = v end end)
+            if type(cb) == "function" then pcall(cb) end
+        end
+    end
+    if delay and delay > 0 and type(task) == "table" and type(task.delay) == "function" then
+        pcall(task.delay, delay, run)
+    else
+        run()
     end
 end
 
@@ -268,6 +275,7 @@ Axiom.GetLucideModulePath = function() return LUCIDE_MODULE_PATH end
 Axiom.GetLucideSource = function() return LucideSource end
 local C = {
     Bg = Color3.fromRGB(24, 26, 31), Side = Color3.fromRGB(29, 32, 38),
+    Bar = Color3.fromRGB(18, 20, 25),
     Panel = Color3.fromRGB(32, 35, 42), Row = Color3.fromRGB(36, 40, 48),
     Line = Color3.fromRGB(52, 57, 67), Text = Color3.fromRGB(232, 236, 243),
     Sub = Color3.fromRGB(144, 152, 166), Accent = Color3.fromRGB(88, 150, 255),
@@ -293,11 +301,11 @@ local function grad(p, c1, c2, rot)
         ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2) }), Rotation = rot or 0 })
 end
 -- 微弱白色静态渐变：叠加在蓝色之上（白色 0.18 -> 0.02 的透明度渐变）
-local function whiteSheen(p, rot)
+local function whiteSheen(p, rot, a1, a2)
     return inst("UIGradient", p, {
         Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
         Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0.18), NumberSequenceKeypoint.new(1, 0.02) }),
+            NumberSequenceKeypoint.new(0, a1 or 0.18), NumberSequenceKeypoint.new(1, a2 or 0.02) }),
         Rotation = rot or 90,
     })
 end
@@ -327,43 +335,119 @@ function Axiom.CreateWindow(opts)
     corner(main, 12); stroke(main, C.Line, 1, 0.2); self.main = main
     fade(main, 0, 0.35)
 
-    local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Side,
+    local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
         BorderSizePixel = 0, ZIndex = 3 })
     inst("UICorner", bar, { CornerRadius = UDim.new(0, 12) })
     local dots = { Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63) }
+    local dotList = {}
+    self._dots = dotList
     for i, col in ipairs(dots) do
-        local d = inst("TextButton", bar, { Name = i == 1 and "CloseDot" or "Dot",
+        local d = inst("TextButton", bar, { Name = i == 1 and "CloseDot" or (i == 2 and "MinDot" or "Dot"),
             Size = UDim2.fromOffset(11, 11),
             Position = UDim2.fromOffset(16 + (i - 1) * 18, 12), BackgroundColor3 = col, BorderSizePixel = 0,
             Text = "", AutoButtonColor = false, ZIndex = 4 })
         corner(d, 6)
+        dotList[i] = d
         if i == 1 then
             connect(d.MouseButton1Click, function() self:_openCloseConfirm() end)
+        elseif i == 2 then
+            connect(d.MouseButton1Click, function() self:_minimize() end)
         end
     end
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
     bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.new(0.5, -150, 0, 7); bt.ZIndex = 4
+    local plusBtn = inst("ImageButton", bar, { Name = "ExpandPlus", Size = UDim2.fromOffset(16, 16),
+        Position = UDim2.fromOffset(126, 9), BackgroundTransparency = 1, ImageTransparency = 1,
+        AutoButtonColor = false, Visible = false, ZIndex = 5 })
+    applyIcon(plusBtn, "plus", C.Accent)
+    connect(plusBtn.MouseButton1Click, function() self:_expand() end)
 
-    local side = inst("ScrollingFrame", main, { Size = UDim2.fromOffset(176, H - 34),
-        Position = UDim2.fromOffset(0, 34), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2,
+    -- 内容层：包裹选项卡区与控件区，供黄点最小化时整块渐隐
+    local contentLayer = inst("CanvasGroup", main, { Name = "ContentLayer", Size = UDim2.fromOffset(W, H - 34),
+        Position = UDim2.fromOffset(0, 34), GroupTransparency = 0, BorderSizePixel = 0, ZIndex = 2 })
+    self._contentLayer = contentLayer
+
+    local side = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(176, H - 34),
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
         HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
         CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self._tabCount = 0
     self._side = side
 
-    local detail = inst("ScrollingFrame", main, { Size = UDim2.fromOffset(W - 176, H - 34),
-        Position = UDim2.fromOffset(176, 34), BackgroundTransparency = 1, ZIndex = 2,
+    local detail = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(W - 176, H - 34),
+        Position = UDim2.fromOffset(176, 0), BackgroundTransparency = 1, ZIndex = 2,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
         HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
         CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self.body = detail
-    local dh = label(detail, opts.Info or "General", 20, C.Text, true)
-    dh.Size = UDim2.fromOffset(400, 28); dh.Position = UDim2.fromOffset(24, 20); dh.ZIndex = 3
-    local ds = label(detail, "Manage your workspace preferences and behavior", 11, C.Sub)
-    ds.Size = UDim2.fromOffset(385, 20); ds.Position = UDim2.fromOffset(25, 50); ds.ZIndex = 3
-    local ddiv = inst("Frame", detail, { Size = UDim2.fromOffset(W - 176 - 48, 1),
-        Position = UDim2.fromOffset(24, 80), BackgroundColor3 = C.Line, BorderSizePixel = 0, ZIndex = 3 })
+
+    -- ===== 黄点最小化 / plus 展开 =====
+    local TITLE_W = 150
+    local btBasePos = UDim2.new(0.5, -150, 0, 7)
+    local btBaseAlign = Enum.TextXAlignment.Center
+    local barBaseW = UDim2.new(1, 0, 0, 34)
+    self._minimized = false
+
+    function self:_minimize()
+        if self._minimized then return end
+        self._minimized = true
+        -- 内容区 / 选项卡区整块渐隐
+        fade(contentLayer, 1, 0.3, function() contentLayer.Visible = false end)
+        -- 三色点渐隐
+        for _, d in ipairs(dotList) do fadeAny(d, 1, 0.3) end
+        -- UI 框架向上收起：高度收到仅剩标题栏
+        tweenProp(main, { Size = UDim2.fromOffset(W, 34) }, 0.34)
+        -- 标题栏从右向左收起，仅剩标题文字区（含右侧 plus 预留位）
+        tweenProp(bar, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
+        -- 标题文字左移并改左对齐
+        tweenProp(bt, { Position = UDim2.fromOffset(10, 7), Size = UDim2.fromOffset(TITLE_W - 40, 20) }, 0.34)
+        pcall(function() bt.TextXAlignment = Enum.TextXAlignment.Left end)
+        -- 预留位置后显示 plus 图标
+        plusBtn.Visible = true
+        tweenProp(plusBtn, { ImageTransparency = 0 }, 0.3, nil, 0.18)
+    end
+
+    function self:_expand()
+        if not self._minimized then return end
+        self._minimized = false
+        -- plus 先淡出
+        tweenProp(plusBtn, { ImageTransparency = 1 }, 0.2, function() plusBtn.Visible = false end, 0.2)
+        -- 标题栏从右向左还原为全宽
+        tweenProp(bar, { Size = barBaseW }, 0.34)
+        -- 标题文字回居中
+        tweenProp(bt, { Position = btBasePos, Size = UDim2.fromOffset(300, 20) }, 0.34)
+        pcall(function() bt.TextXAlignment = btBaseAlign end)
+        -- UI 框架向下展开还原高度（逆向动画）
+        tweenProp(main, { Size = UDim2.fromOffset(W, H) }, 0.34, function()
+            contentLayer.Visible = true
+        end, 0.1)
+        -- 内容区 / 三色点渐显还原
+        fade(contentLayer, 0, 0.3)
+        for _, d in ipairs(dotList) do fadeAny(d, 0, 0.3) end
+    end
+
+    -- ===== 拖动标题文字移动窗口 =====
+    local dragging, dragStart, mainStart = false, nil, nil
+    connect(bt.InputBegan, function(input)
+        local ok, typ = pcall(function() return input.UserInputType end)
+        if not ok or typ ~= Enum.UserInputType.MouseButton1 then return end
+        dragging = true
+        dragStart = { x = input.Position.X, y = input.Position.Y }
+        mainStart = { x = main.Position.X.Offset, y = main.Position.Y.Offset }
+    end)
+    connect(bt.InputChanged, function(input)
+        if not dragging then return end
+        local ok, typ = pcall(function() return input.UserInputType end)
+        if not ok or typ ~= Enum.UserInputType.MouseMovement then return end
+        local dx = input.Position.X - dragStart.x
+        local dy = input.Position.Y - dragStart.y
+        main.Position = UDim2.new(main.Position.X.Scale, mainStart.x + dx,
+            main.Position.Y.Scale, mainStart.y + dy)
+    end)
+    connect(bt.InputEnded, function()
+        dragging = false
+    end)
 
     function self:AddTab(name, icon)
         self._tabCount = self._tabCount + 1
@@ -395,7 +479,7 @@ function Axiom.CreateWindow(opts)
             Position = UDim2.fromOffset(8, my - 5), BackgroundTransparency = 1,
             BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 5 })
         local tab = { _win = self, _name = name, _bg = bg, _act = act, _mi = mi, _mt = mt,
-            _content = content, _rows = 0, _lastY = 92 }
+            _content = content, _rows = 0, _lastY = 24 }
         connect(hit.MouseButton1Click, function() self:SelectTab(tab) end)
         self._tabs[#self._tabs + 1] = tab
         if active then self._activeTab = tab end
@@ -415,7 +499,7 @@ function Axiom.CreateWindow(opts)
         for _, t in ipairs(self._tabs) do
             if t._content then t._content.Visible = (t == tab) end
         end
-        detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, (tab._lastY or 92) + 60))
+        detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, (tab._lastY or 24) + 60))
         pcall(function() detail.CanvasPosition = UDim2.fromOffset(0, 0) end)
         for _, t in ipairs(self._tabs) do
             local on = (t == tab)
@@ -437,7 +521,7 @@ function Axiom.CreateWindow(opts)
         local host = (owner and owner._content) or detail
         owner = owner or self
         owner._rows = (owner._rows or 0) + 1
-        local y = 92 + (owner._rows - 1) * 52
+        local y = 24 + (owner._rows - 1) * 52
         owner._lastY = y
         detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, y + 60))
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
@@ -448,13 +532,13 @@ function Axiom.CreateWindow(opts)
             Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
         local tx = label(host, o.Title or kind, 13, C.Text, true)
-        tx.Size = UDim2.fromOffset(210, 20); tx.Position = UDim2.fromOffset(46, y + 6); tx.ZIndex = 3
+        tx.Size = UDim2.fromOffset(210, 20); tx.Position = UDim2.fromOffset(58, y + 4); tx.ZIndex = 3
         local sub = label(host, o.Desc or "Axiom setting", 10, C.Sub)
-        sub.Size = UDim2.fromOffset(230, 16); sub.Position = UDim2.fromOffset(46, y + 26); sub.ZIndex = 3
+        sub.Size = UDim2.fromOffset(230, 16); sub.Position = UDim2.fromOffset(58, y + 22); sub.ZIndex = 3
         local rx = W - 176 - 24
         if kind == "Paragraph" then
             sub.Text = o.Text or ""; sub.Size = UDim2.new(1, -300, 0, 30)
-            sub.Position = UDim2.fromOffset(46, y + 22); sub.TextWrapped = true
+            sub.Position = UDim2.fromOffset(58, y + 20); sub.TextWrapped = true
             function obj:SetText(v) sub.Text = tostring(v or "") end
             function obj:Get() return sub.Text end
         elseif kind == "Toggle" then
@@ -464,8 +548,8 @@ function Axiom.CreateWindow(opts)
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
             local shine = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
-                BackgroundTransparency = 0, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
-            corner(shine, 12); whiteSheen(shine, 0)
+                BackgroundTransparency = 0.52, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
+            corner(shine, 12); whiteSheen(shine, 0, 0.42, 0.2)
             local kn = inst("Frame", tr, { Size = UDim2.fromOffset(18, 18),
                 Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0),
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
@@ -570,10 +654,7 @@ function Axiom.CreateWindow(opts)
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(cap, 7); stroke(cap, C.Line, 1, 0)
             local cur = label(cap, display(), 12, C.Text, false, Enum.TextXAlignment.Center)
-            cur.Size = UDim2.new(1, -18, 1, 0); cur.ZIndex = 4
-            local ar = inst("ImageLabel", cap, { Size = UDim2.fromOffset(13, 13),
-                Position = UDim2.new(1, -19, 0.5, -6.5), BackgroundTransparency = 1, ZIndex = 4 })
-            applyIcon(ar, "chevron-down", C.Sub)
+            cur.Size = UDim2.fromScale(1, 1); cur.ZIndex = 4
             local menu = inst("CanvasGroup", main, { Name = "DropMenu", Size = UDim2.fromOffset(140, 8 + #options * 26),
                 Position = UDim2.fromOffset(176 + rx - 140, 34 + y + 36), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
