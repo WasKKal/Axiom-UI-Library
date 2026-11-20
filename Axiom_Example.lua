@@ -27,6 +27,7 @@ local Win = Axiom.CreateWindow({
     Title = "AXIOM",
     LoginInfo = true,
     LoginTitle = "版本更新日志",
+    Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
     OnLoadScript = function() print("load script -> main UI") end,
     OnUnloadScript = function() print("unload script -> fade out & destroy") end,
 })
