@@ -2,6 +2,14 @@
 
 主从分栏布局的 Roblox/Luau UI 库：左侧文字菜单 + 右侧表格化对齐控件。带两级本地 Lucide 图标缓存（优先读本地）与完整交互控件。
 
+## 视觉与动效
+
+- **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.5`，视觉尺寸缩小约一半且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
+- **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。
+- **渐隐渐显**：主窗口、下拉菜单、颜色色板、通知均用 `CanvasGroup` + `TweenService` 做淡入淡出，动画失败时 pcall 兜底直接赋值。
+- **下拉已选择指示器**：多选/单选菜单每项右侧带 Lucide `check` 勾选，`Set/Select/ClearSelection` 后同步刷新。
+- **颜色过渡**：ColorPicker 切换颜色时对色块做 0.22s 颜色补间，不再瞬间跳变。
+
 ## 文件
 
 | 文件 | 说明 |
