@@ -4,9 +4,10 @@
 
 ## 视觉与动效
 
-- **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.5`，视觉尺寸缩小约一半且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
-- **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。
-- **渐隐渐显**：主窗口、下拉菜单、颜色色板、通知均用 `CanvasGroup` + `TweenService` 做淡入淡出，动画失败时 pcall 兜底直接赋值。
+- **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.65`，视觉尺寸缩小约三分之一且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
+- **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。切换时旧蓝白渐变条缩短渐隐、新条伸长渐显。
+- **渐隐渐显**：主窗口、下拉菜单、颜色色板、通知均用 `CanvasGroup` + `TweenService` 做淡入淡出，动画失败时 pcall 兜底直接赋值；边框 `UIStroke` 同步补间透明度。
+- **角落圆点**：红点=关闭确认框；黄点=最小化（内容/选项卡/圆点渐隐，框架收起到仅剩标题栏，标题左移并显示 plus，再点 plus 逆向还原）；绿点为装饰。拖动标题栏或标题文字可移动窗口。
 - **下拉已选择指示器**：多选/单选菜单每项右侧带 Lucide `check` 勾选，`Set/Select/ClearSelection` 后同步刷新。
 - **颜色过渡**：ColorPicker 切换颜色时对色块做 0.22s 颜色补间，不再瞬间跳变。
 - **红点关闭确认**：标题栏最左侧红点为可点击按钮，点击后黑色蒙版覆盖界面并居中弹出确认框"你要关闭这个脚本吗？"，下方两个长按钮各占一行——`关闭窗口`（红色，销毁整个界面）与 `取消`（关闭确认框）。蒙版点击也可取消。
@@ -72,9 +73,28 @@ local Win = Axiom.CreateWindow({ Title = "AXIOM" })
 - `Multi = true` 时下拉为多选：`Default` 传数组（如 `{ "Neon", "Retro" }`），`Get()` 返回按 `Options` 排序的数组；胶囊超过 3 项折叠为 `+N`。
 - `Callback` 也可在创建对象后通过 `obj:Callback(fn)` 设置。
 
+### `Axiom.Notify(o)`（全局通知，推荐）
+
+`o`：`Title`、`Text`（或 `Info`）、`Duration`（秒，默认 4）、`Type`（`info`/`success`/`warning`/`error`，影响左侧色条与图标）、`Icon`。从屏幕右上角堆叠，多条通知自动向下排列；高度按文字长度自适应（实测 `TextService` 优先、超长文本自动换行）；入场从右滑入+渐显，退场滑出+渐隐并让后续通知自动上移。返回 `{ Frame, Dismiss() }`，可手动 `Dismiss()` 提前关闭。
+
+```lua
+Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success", Duration = 5 })
+```
+
 ### `Window:ShowNotify(o)`
 
-`o`：`Title`、`Info`、`Duration`（秒，默认 3）。右下角通知，到时自动淡出。
+窗口内右下角简易通知。`o`：`Title`、`Info`、`Duration`（默认 3）。到时自动淡出。（全局堆叠通知请用上面的 `Axiom.Notify`。）
+
+### LoginInfo 启动页
+
+`Axiom.CreateWindow({ LoginInfo = true, LoginTitle = "版本更新日志", ... })` 时创建启动页：不显示三色点/选项卡/功能区。右侧 1/3 显示圆形 LocalPlayer 头像、用户名与两个按钮——`加载脚本`（登录页渐隐、主 UI 渐显）、`卸载脚本`（整个 UI 渐隐销毁）；左侧 2/3 显示加粗大标题与多个整行段落。
+
+`opts` 额外字段：`LoginTitle`（大标题）、`OnLoadScript(fn)`、`OnUnloadScript(fn)`。
+
+```lua
+local Win = Axiom.CreateWindow({ Title = "AXIOM", LoginInfo = true, LoginTitle = "版本更新日志" })
+Win:AddLoginParagraph({ Title = "v1.0.0", Text = "更新内容……" }) -- 整行、自动换行、高度自适应，返回对象有 SetText/Get
+```
 
 ### 缓存查询
 
