@@ -7,7 +7,7 @@
 - **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.65`，视觉尺寸缩小约三分之一且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
 - **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。切换时旧蓝白渐变条缩短渐隐、新条伸长渐显。
 - **渐隐渐显**：主窗口、下拉菜单、颜色色板、通知均用 `CanvasGroup` + `TweenService` 做淡入淡出，动画失败时 pcall 兜底直接赋值；边框 `UIStroke` 同步补间透明度。
-- **角落圆点**：红点=关闭确认框；黄点=最小化（内容/选项卡/圆点渐隐，框架收起到仅剩标题栏，标题左移并显示 plus，再点 plus 逆向还原）；绿点为装饰。拖动标题栏或标题文字可移动窗口。
+- **角落圆点**：红点=关闭确认框；黄点=最小化（内容/选项卡/圆点渐隐，框架收起到仅剩标题栏，标题左移并显示 plus，再点 plus 逆向还原）；绿点为装饰。拖动标题栏或标题文字可移动窗口（用 `UserInputService` 全局监听，鼠标移出标题栏后仍可持续拖动）。
 - **下拉已选择指示器**：多选/单选菜单每项右侧带 Lucide `check` 勾选，`Set/Select/ClearSelection` 后同步刷新。
 - **颜色过渡**：ColorPicker 切换颜色时对色块做 0.22s 颜色补间，不再瞬间跳变。
 - **红点关闭确认**：标题栏最左侧红点为可点击按钮，点击后黑色蒙版覆盖界面并居中弹出确认框"你要关闭这个脚本吗？"，下方两个长按钮各占一行——`关闭窗口`（红色，销毁整个界面）与 `取消`（关闭确认框）。蒙版点击也可取消。
@@ -87,13 +87,18 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 
 ### LoginInfo 启动页
 
-`Axiom.CreateWindow({ LoginInfo = true, LoginTitle = "版本更新日志", ... })` 时创建启动页：不显示三色点/选项卡/功能区。右侧 1/3 显示圆形 LocalPlayer 头像、用户名与两个按钮——`加载脚本`（登录页渐隐、主 UI 渐显）、`卸载脚本`（整个 UI 渐隐销毁）；左侧 2/3 显示加粗大标题与多个整行段落。
+`Axiom.CreateWindow({ LoginInfo = true, LoginTitle = "版本更新日志", ... })` 时创建启动页：初始只显示登录层，隐藏三色点/功能区。右侧 1/3 显示圆形 LocalPlayer 头像、用户名与两个按钮——`加载脚本`（登录层渐隐、主界面渐显）、`卸载脚本`（整个 UI 渐隐销毁）；左侧 2/3 显示加粗大标题与多个整行段落。`加载脚本`文字为蓝白微渐变，`卸载脚本`为深灰底。
+
+**登录页与选项卡共用同一个窗口**：对同一个 `CreateWindow` 返回值继续 `AddTab` 添加功能即可。加载脚本后，登录层淡出，露出的就是**同一个窗口**里已建好的选项卡与控件；最小化/展开/关闭都只作用于这一个窗口，不会出现两个窗口。
 
 `opts` 额外字段：`LoginTitle`（大标题）、`OnLoadScript(fn)`、`OnUnloadScript(fn)`。
 
 ```lua
 local Win = Axiom.CreateWindow({ Title = "AXIOM", LoginInfo = true, LoginTitle = "版本更新日志" })
 Win:AddLoginParagraph({ Title = "v1.0.0", Text = "更新内容……" }) -- 整行、自动换行、高度自适应，返回对象有 SetText/Get
+-- 同一个窗口继续加选项卡：加载脚本后即显示这些功能
+local Tab = Win:AddTab("General", "settings")
+Tab:AddToggle({ Title = "Master Switch", Default = true })
 ```
 
 ### 缓存查询
