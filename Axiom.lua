@@ -254,6 +254,7 @@ local C = {
     Line = Color3.fromRGB(52, 57, 67), Text = Color3.fromRGB(232, 236, 243),
     Sub = Color3.fromRGB(144, 152, 166), Accent = Color3.fromRGB(88, 150, 255),
     Accent2 = Color3.fromRGB(120, 190, 255), Green = Color3.fromRGB(76, 209, 153),
+    AccentW = Color3.fromRGB(172, 208, 255),
     Track = Color3.fromRGB(58, 63, 74),
 }
 local FONT = Enum.Font.SourceSans
@@ -272,6 +273,15 @@ end
 local function grad(p, c1, c2, rot)
     return inst("UIGradient", p, { Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2) }), Rotation = rot or 0 })
+end
+-- 微弱白色静态渐变：叠加在蓝色之上（白色 0.18 -> 0.02 的透明度渐变）
+local function whiteSheen(p, rot)
+    return inst("UIGradient", p, {
+        Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0.18), NumberSequenceKeypoint.new(1, 0.02) }),
+        Rotation = rot or 90,
+    })
 end
 local function label(p, txt, size, col, bold, xal)
     return inst("TextLabel", p, {
@@ -316,13 +326,19 @@ function Axiom.CreateWindow(opts)
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
     bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.new(0.5, -150, 0, 7); bt.ZIndex = 4
 
-    local side = inst("Frame", main, { Size = UDim2.fromOffset(176, H - 34),
-        Position = UDim2.fromOffset(0, 34), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2 })
+    local side = inst("ScrollingFrame", main, { Size = UDim2.fromOffset(176, H - 34),
+        Position = UDim2.fromOffset(0, 34), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
+        CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self._tabCount = 0
     self._side = side
 
-    local detail = inst("Frame", main, { Size = UDim2.fromOffset(W - 176, H - 34),
-        Position = UDim2.fromOffset(176, 34), BackgroundTransparency = 1, ZIndex = 2 })
+    local detail = inst("ScrollingFrame", main, { Size = UDim2.fromOffset(W - 176, H - 34),
+        Position = UDim2.fromOffset(176, 34), BackgroundTransparency = 1, ZIndex = 2,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
+        CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self.body = detail
     local dh = label(detail, opts.Info or "General", 20, C.Text, true)
     dh.Size = UDim2.fromOffset(400, 28); dh.Position = UDim2.fromOffset(24, 20); dh.ZIndex = 3
@@ -341,10 +357,11 @@ function Axiom.CreateWindow(opts)
             Position = UDim2.fromOffset(8, my - 5), BackgroundColor3 = C.Panel,
             BackgroundTransparency = active and 0.4 or 1, BorderSizePixel = 0, ZIndex = 1 })
         corner(bg, 8)
-        local act = inst("Frame", side, { Size = UDim2.fromOffset(3, 26),
-            Position = UDim2.fromOffset(0, my - 1), BackgroundColor3 = C.Accent,
+        local act = inst("Frame", bg, { Size = UDim2.fromOffset(3, 26),
+            Position = UDim2.fromOffset(2, 4), BackgroundColor3 = C.Accent,
             BackgroundTransparency = active and 0 or 1, BorderSizePixel = 0, ZIndex = 4 })
         corner(act, 2)
+        side.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, my + 40))
         local mi = inst("ImageLabel", side, { Size = UDim2.fromOffset(17, 17),
             Position = UDim2.fromOffset(18, my + 5), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(mi, icon or "home", active and C.Accent or C.Sub)
@@ -364,6 +381,7 @@ function Axiom.CreateWindow(opts)
         o = o or {}
         self._rows = self._rows + 1
         local y = 92 + (self._rows - 1) * 52
+        detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, y + 60))
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
         if type(o.Callback) == "function" then obj._cb = o.Callback end
         local iconTop = (kind == "Paragraph") and (y + 21)
@@ -387,6 +405,9 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 44, y + 8), BackgroundColor3 = on and C.Accent or C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
+            local shine = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
+                BackgroundTransparency = 0, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
+            corner(shine, 12); whiteSheen(shine, 0)
             local kn = inst("Frame", tr, { Size = UDim2.fromOffset(18, 18),
                 Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0),
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
@@ -394,6 +415,7 @@ function Axiom.CreateWindow(opts)
             local function refresh()
                 local bg = on and C.Accent or C.Track
                 local kp = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
+                shine.Visible = on
                 local done = false
                 pcall(function()
                     local ts = game:GetService("TweenService")
@@ -420,7 +442,7 @@ function Axiom.CreateWindow(opts)
             corner(b, 7)
             local bfill = inst("Frame", b, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Accent,
                 BorderSizePixel = 0, ZIndex = 3 })
-            corner(bfill, 7); grad(bfill, C.Accent, C.Accent2, 0)
+            corner(bfill, 7); grad(bfill, C.Accent, C.AccentW, 0); whiteSheen(bfill, 0)
             local btxt = label(b, o.Title or "Apply", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
             btxt.Size = UDim2.fromScale(1, 1); btxt.ZIndex = 5
             connect(b.MouseButton1Click, function() emit(obj, nil) end)
@@ -494,15 +516,22 @@ function Axiom.CreateWindow(opts)
             local ar = inst("ImageLabel", cap, { Size = UDim2.fromOffset(13, 13),
                 Position = UDim2.new(1, -19, 0.5, -6.5), BackgroundTransparency = 1, ZIndex = 4 })
             applyIcon(ar, "chevron-down", C.Sub)
-            local menu = inst("CanvasGroup", detail, { Size = UDim2.fromOffset(140, 8 + #options * 26),
-                Position = UDim2.fromOffset(rx - 140, y + 36), BackgroundColor3 = C.Panel,
+            local menu = inst("CanvasGroup", main, { Name = "DropMenu", Size = UDim2.fromOffset(140, 8 + #options * 26),
+                Position = UDim2.fromOffset(176 + rx - 140, 34 + y + 36), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
             corner(menu, 7); stroke(menu, C.Line, 1, 0)
             local checks = {}
             local function refreshChecks()
                 for _, opt in ipairs(options) do
-                    local chk = checks[opt]
-                    if chk then chk.Visible = selected[opt] and true or false end
+                    local ui = checks[opt]
+                    if ui then
+                        local on = selected[opt] and true or false
+                        ui.row.BackgroundColor3 = on and Color3.new(1, 1, 1) or C.Row
+                        ui.row.BackgroundTransparency = on and 0.86 or 0
+                        ui.txt.TextColor3 = on and Color3.fromRGB(18, 18, 22) or C.Text
+                        ui.chk.Visible = on
+                        ui.chk.ImageColor3 = on and Color3.fromRGB(18, 18, 22) or C.Accent
+                    end
                 end
             end
             local function openMenu() menu.Visible = true; fade(menu, 0, 0.18) end
@@ -518,7 +547,7 @@ function Axiom.CreateWindow(opts)
                     Position = UDim2.new(1, -20, 0.5, -6.5), BackgroundTransparency = 1,
                     Visible = false, ZIndex = 17 })
                 applyIcon(chk, "check", C.Accent)
-                checks[opt] = chk
+                checks[opt] = { row = rb, txt = rl, chk = chk }
                 connect(rb.MouseButton1Click, function()
                     if multi then
                         selected[opt] = not selected[opt]
@@ -556,8 +585,8 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 42, y + 7), BackgroundColor3 = cur,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(sw, 6); stroke(sw, C.Line, 1, 0)
-            local palette = inst("CanvasGroup", detail, { Size = UDim2.fromOffset(150, 36),
-                Position = UDim2.fromOffset(rx - 150, y + 36), BackgroundColor3 = C.Panel,
+            local palette = inst("CanvasGroup", main, { Name = "ColorPalette", Size = UDim2.fromOffset(150, 36),
+                Position = UDim2.fromOffset(176 + rx - 150, 34 + y + 36), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
             corner(palette, 8); stroke(palette, C.Line, 1, 0)
             local function openPalette() palette.Visible = true; fade(palette, 0, 0.18) end
