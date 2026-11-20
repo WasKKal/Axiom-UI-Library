@@ -158,6 +158,23 @@ end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
+local function fade(cg, to, dur, cb)
+    if not cg then return end
+    local done = false
+    pcall(function()
+        local ts = game:GetService("TweenService")
+        if not ts then return end
+        local ti = TweenInfo.new(dur or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tw = ts:Create(cg, ti, { GroupTransparency = to })
+        if type(cb) == "function" then tw.Completed:Connect(cb) end
+        tw:Play()
+        done = true
+    end)
+    if not done then
+        pcall(function() cg.GroupTransparency = to end)
+        if type(cb) == "function" then pcall(cb) end
+    end
+end
 
 local Axiom = {}
 Axiom.__index = Axiom
@@ -207,10 +224,12 @@ function Axiom.CreateWindow(opts)
     if holder then gui.Parent = holder end
     self.gui = gui
     local W, H = 620, 440
-    local main = inst("Frame", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
-        Position = UDim2.new(0.5, -W/2, 0.5, -H/2), BackgroundColor3 = C.Bg,
-        BorderSizePixel = 0, ZIndex = 1 })
+    local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
+        Position = UDim2.new(0.5, -W/4, 0.5, -H/4), BackgroundColor3 = C.Bg,
+        BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
+    inst("UIScale", main, { Scale = 0.5 })
     corner(main, 12); stroke(main, C.Line, 1, 0.2); self.main = main
+    fade(main, 0, 0.35)
 
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Side,
         BorderSizePixel = 0, ZIndex = 3 })
@@ -225,26 +244,8 @@ function Axiom.CreateWindow(opts)
 
     local side = inst("Frame", main, { Size = UDim2.fromOffset(176, H - 34),
         Position = UDim2.fromOffset(0, 34), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2 })
-    local menu = { { "home", "General" }, { "palette", "Appearance" },
-        { "monitor", "System" }, { "info", "About" } }
-    for i, m in ipairs(menu) do
-        local my = 22 + (i - 1) * 44
-        local mi = inst("ImageLabel", side, { Size = UDim2.fromOffset(17, 17),
-            Position = UDim2.fromOffset(18, my + 5), BackgroundTransparency = 1, ZIndex = 3 })
-        applyIcon(mi, m[1], i == 1 and C.Accent or C.Sub)
-        local mt = label(side, m[2], 13, i == 1 and C.Text or C.Sub, i == 1)
-        mt.Size = UDim2.fromOffset(120, 24); mt.Position = UDim2.fromOffset(44, my); mt.ZIndex = 3
-        if i == 1 then
-            local act = inst("Frame", side, { Size = UDim2.fromOffset(3, 26),
-                Position = UDim2.fromOffset(0, my - 1), BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 4 })
-            corner(act, 2)
-            local bg = inst("Frame", side, { Size = UDim2.fromOffset(160, 34),
-                Position = UDim2.fromOffset(8, my - 5), BackgroundColor3 = C.Panel,
-                BackgroundTransparency = 0.4, BorderSizePixel = 0, ZIndex = 1 })
-            corner(bg, 8)
-            bg.Parent = side
-        end
-    end
+    self._tabCount = 0
+    self._side = side
 
     local detail = inst("Frame", main, { Size = UDim2.fromOffset(W - 176, H - 34),
         Position = UDim2.fromOffset(176, 34), BackgroundTransparency = 1, ZIndex = 2 })
@@ -252,12 +253,30 @@ function Axiom.CreateWindow(opts)
     local dh = label(detail, opts.Info or "General", 20, C.Text, true)
     dh.Size = UDim2.fromOffset(400, 28); dh.Position = UDim2.fromOffset(24, 20); dh.ZIndex = 3
     local ds = label(detail, "Manage your workspace preferences and behavior", 11, C.Sub)
-    ds.Size = UDim2.fromOffset(440, 20); ds.Position = UDim2.fromOffset(25, 50); ds.ZIndex = 3
+    ds.Size = UDim2.fromOffset(385, 20); ds.Position = UDim2.fromOffset(25, 50); ds.ZIndex = 3
     local ddiv = inst("Frame", detail, { Size = UDim2.fromOffset(W - 176 - 48, 1),
         Position = UDim2.fromOffset(24, 80), BackgroundColor3 = C.Line, BorderSizePixel = 0, ZIndex = 3 })
 
     function self:AddTab(name, icon)
-        local tab = { _win = self, _name = name }
+        self._tabCount = self._tabCount + 1
+        local i = self._tabCount
+        local my = 22 + (i - 1) * 44
+        local active = (i == 1)
+        local side = self._side
+        local bg = inst("Frame", side, { Size = UDim2.fromOffset(160, 34),
+            Position = UDim2.fromOffset(8, my - 5), BackgroundColor3 = C.Panel,
+            BackgroundTransparency = active and 0.4 or 1, BorderSizePixel = 0, ZIndex = 1 })
+        corner(bg, 8)
+        local act = inst("Frame", side, { Size = UDim2.fromOffset(3, 26),
+            Position = UDim2.fromOffset(0, my - 1), BackgroundColor3 = C.Accent,
+            BackgroundTransparency = active and 0 or 1, BorderSizePixel = 0, ZIndex = 4 })
+        corner(act, 2)
+        local mi = inst("ImageLabel", side, { Size = UDim2.fromOffset(17, 17),
+            Position = UDim2.fromOffset(18, my + 5), BackgroundTransparency = 1, ZIndex = 3 })
+        applyIcon(mi, icon or "home", active and C.Accent or C.Sub)
+        local mt = label(side, name or ("Tab " .. i), 13, active and C.Text or C.Sub, active)
+        mt.Size = UDim2.fromOffset(120, 24); mt.Position = UDim2.fromOffset(44, my); mt.ZIndex = 3
+        local tab = { _win = self, _name = name, _bg = bg, _act = act, _mi = mi, _mt = mt }
         function tab:AddToggle(o) return self._win:_row("Toggle", o) end
         function tab:AddButton(o) return self._win:_row("Button", o) end
         function tab:AddSlider(o) return self._win:_row("Slider", o) end
@@ -401,43 +420,61 @@ function Axiom.CreateWindow(opts)
             local ar = inst("ImageLabel", cap, { Size = UDim2.fromOffset(13, 13),
                 Position = UDim2.new(1, -19, 0.5, -6.5), BackgroundTransparency = 1, ZIndex = 4 })
             applyIcon(ar, "chevron-down", C.Sub)
-            local menu = inst("Frame", detail, { Size = UDim2.fromOffset(140, 8 + #options * 26),
+            local menu = inst("CanvasGroup", detail, { Size = UDim2.fromOffset(140, 8 + #options * 26),
                 Position = UDim2.fromOffset(rx - 140, y + 36), BackgroundColor3 = C.Panel,
-                BorderSizePixel = 0, Visible = false, ZIndex = 14 })
+                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
             corner(menu, 7); stroke(menu, C.Line, 1, 0)
+            local checks = {}
+            local function refreshChecks()
+                for _, opt in ipairs(options) do
+                    local chk = checks[opt]
+                    if chk then chk.Visible = selected[opt] and true or false end
+                end
+            end
+            local function openMenu() menu.Visible = true; fade(menu, 0, 0.18) end
+            local function closeMenu() fade(menu, 1, 0.18, function() menu.Visible = false end) end
             for i, opt in ipairs(options) do
                 local rb = inst("TextButton", menu, { Size = UDim2.new(1, -8, 0, 22),
                     Position = UDim2.fromOffset(4, 4 + (i - 1) * 26), BackgroundColor3 = C.Row,
                     BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 15 })
                 corner(rb, 5)
                 local rl = label(rb, tostring(opt), 12, C.Text, false, Enum.TextXAlignment.Center)
-                rl.Size = UDim2.new(1, 0, 1, 0); rl.ZIndex = 16
+                rl.Size = UDim2.new(1, -22, 1, 0); rl.ZIndex = 16
+                local chk = inst("ImageLabel", rb, { Name = "checkicon", Size = UDim2.fromOffset(13, 13),
+                    Position = UDim2.new(1, -20, 0.5, -6.5), BackgroundTransparency = 1,
+                    Visible = false, ZIndex = 17 })
+                applyIcon(chk, "check", C.Accent)
+                checks[opt] = chk
                 connect(rb.MouseButton1Click, function()
                     if multi then
                         selected[opt] = not selected[opt]
                     else
-                        selected = {}; selected[opt] = true; menu.Visible = false
+                        selected = {}; selected[opt] = true; closeMenu()
                     end
+                    refreshChecks()
                     cur.Text = display(); obj.Value = multi and keys() or keys()[1]
                     emit(obj, obj.Value)
                 end)
             end
-            connect(cap.MouseButton1Click, function() menu.Visible = not menu.Visible end)
+            refreshChecks()
+            connect(cap.MouseButton1Click, function()
+                if menu.Visible then closeMenu() else openMenu() end
+            end)
             function obj:Set(v)
                 selected = {}
                 if multi and type(v) == "table" then
                     for _, x in ipairs(v) do selected[x] = true end
                 elseif v ~= nil then selected[tostring(v)] = true end
-                cur.Text = display(); obj.Value = multi and keys() or keys()[1]
+                refreshChecks(); cur.Text = display(); obj.Value = multi and keys() or keys()[1]
             end
             function obj:Get() return multi and keys() or keys()[1] end
             function obj:Select(name, on)
                 selected[name] = (on == nil) and true or (on and true or false)
-                cur.Text = display(); obj.Value = multi and keys() or keys()[1]
+                refreshChecks(); cur.Text = display(); obj.Value = multi and keys() or keys()[1]
             end
             function obj:IsSelected(name) return selected[name] and true or false end
             function obj:ClearSelection()
-                selected = {}; cur.Text = display(); obj.Value = multi and {} or nil
+                selected = {}; refreshChecks(); cur.Text = display(); obj.Value = multi and {} or nil
             end
         elseif kind == "ColorPicker" then
             local cur = o.Default or C.Accent
@@ -445,10 +482,23 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 42, y + 7), BackgroundColor3 = cur,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(sw, 6); stroke(sw, C.Line, 1, 0)
-            local palette = inst("Frame", detail, { Size = UDim2.fromOffset(150, 36),
+            local palette = inst("CanvasGroup", detail, { Size = UDim2.fromOffset(150, 36),
                 Position = UDim2.fromOffset(rx - 150, y + 36), BackgroundColor3 = C.Panel,
-                BorderSizePixel = 0, Visible = false, ZIndex = 14 })
+                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
             corner(palette, 8); stroke(palette, C.Line, 1, 0)
+            local function openPalette() palette.Visible = true; fade(palette, 0, 0.18) end
+            local function closePalette() fade(palette, 1, 0.18, function() palette.Visible = false end) end
+            local function tweenSwatch(target)
+                local done = false
+                pcall(function()
+                    local ts = game:GetService("TweenService")
+                    if not ts then return end
+                    local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+                    ts:Create(sw, ti, { BackgroundColor3 = target }):Play()
+                    done = true
+                end)
+                if not done then pcall(function() sw.BackgroundColor3 = target end) end
+            end
             local swatches = { C.Accent, Color3.fromRGB(94, 234, 212), C.Green,
                 Color3.fromRGB(255, 189, 46), Color3.fromRGB(255, 95, 86), C.Text }
             for i, col in ipairs(swatches) do
@@ -457,12 +507,14 @@ function Axiom.CreateWindow(opts)
                     BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 15 })
                 corner(b, 5)
                 connect(b.MouseButton1Click, function()
-                    cur = col; sw.BackgroundColor3 = cur; obj.Value = cur
-                    palette.Visible = false; emit(obj, cur)
+                    cur = col; tweenSwatch(cur); obj.Value = cur
+                    closePalette(); emit(obj, cur)
                 end)
             end
-            connect(sw.MouseButton1Click, function() palette.Visible = not palette.Visible end)
-            function obj:SetValue(v) cur = v or C.Accent; sw.BackgroundColor3 = cur; obj.Value = cur end
+            connect(sw.MouseButton1Click, function()
+                if palette.Visible then closePalette() else openPalette() end
+            end)
+            function obj:SetValue(v) cur = v or C.Accent; tweenSwatch(cur); obj.Value = cur end
             function obj:Get() return cur end
         end
         function obj:Callback(fn) obj._cb = fn; return obj end
@@ -471,9 +523,11 @@ function Axiom.CreateWindow(opts)
 
     function self:ShowNotify(o)
         o = o or {}
-        local toast = inst("Frame", gui, { Size = UDim2.fromOffset(260, 60),
-            Position = UDim2.new(1, -280, 1, -78), BackgroundColor3 = C.Panel, BorderSizePixel = 0, ZIndex = 20 })
+        local toast = inst("CanvasGroup", gui, { Size = UDim2.fromOffset(260, 60),
+            Position = UDim2.new(1, -280, 1, -78), BackgroundColor3 = C.Panel,
+            BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 20 })
         corner(toast, 10); stroke(toast, C.Accent, 1.5, 0.3)
+        fade(toast, 0, 0.25)
         local ni = inst("ImageLabel", toast, { Size = UDim2.fromOffset(20, 20),
             Position = UDim2.fromOffset(12, 11), BackgroundTransparency = 1, ZIndex = 22 })
         applyIcon(ni, "bell", C.Accent)
@@ -483,7 +537,7 @@ function Axiom.CreateWindow(opts)
         s.Size = UDim2.fromOffset(230, 20); s.Position = UDim2.fromOffset(12, 34); s.ZIndex = 21
         if type(task) == "table" and type(task.delay) == "function" then
             pcall(task.delay, o.Duration or 3, function()
-                if toast.Parent then toast:Destroy() end
+                fade(toast, 1, 0.3, function() if toast.Parent then toast:Destroy() end end)
             end)
         end
         return toast
