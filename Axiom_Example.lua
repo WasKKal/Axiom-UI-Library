@@ -82,4 +82,28 @@ TabAbout:AddParagraph({ Title = "Axiom UI Library", Desc = "关于", Icon = "ali
 TabAbout:AddButton({ Title = "GitHub", Desc = "打开仓库", Icon = "send",
     Callback = function() print("https://github.com/WasKKal/Axiom-UI-Library") end })
 
-Win:ShowNotify({ Title = "Ready", Info = "Axiom UI Library · 图标缓存于 lucide-icon-latest/" })
+-- ===== Notify 演示：右上角堆叠、高度自适应、入场/退场动画 =====
+Axiom.Notify({ Title = "系统就绪", Text = "Axiom UI Library 已加载，图标缓存于 lucide-icon-latest/", Type = "info", Duration = 5 })
+Axiom.Notify({ Title = "多选下拉", Text = "支持多选与超长文本自动换行，通知高度会随内容动态增长。", Type = "success", Duration = 6 })
+Axiom.Notify({ Title = "提示", Text = string.rep("这是一段用于演示自动换行的较长文本内容，", 3), Type = "warning", Duration = 7 })
+
+-- ===== LoginInfo 启动页：加载脚本后切入上面的主 UI，卸载脚本后整个 UI 渐隐删除 =====
+local LoginWin = Axiom.CreateWindow({
+    Title = "AXIOM",
+    LoginInfo = true,
+    LoginTitle = "版本更新日志",
+    OnLoadScript = function() print("load script -> show main UI") end,
+    OnUnloadScript = function() print("unload script -> fade out & destroy") end,
+})
+LoginWin:AddLoginParagraph({
+    Title = "v1.0.0", Icon = "align-left",
+    Text = "重构主从分栏布局，新增 Lucide 本地图标缓存；下拉菜单支持多选并允许溢出窗口，选项卡加入蓝白渐变指示条与切换伸缩动画。",
+})
+LoginWin:AddLoginParagraph({
+    Title = "v1.0.0", Icon = "sparkles",
+    Text = string.rep("新增全局 Notify 通知系统：右上角堆叠、按文字长度自适应高度、带入场与退场动画；黄点可最小化窗口，标题栏支持拖动。", 2),
+})
+LoginWin:AddLoginParagraph({
+    Title = "v1.0.0", Icon = "align-left",
+    Text = "修复最小化后功能区发白、收起残留长条、隐藏圆点仍可交互等问题；边框加深，控件标题与描述排版更紧凑。",
+})
