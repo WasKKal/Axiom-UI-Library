@@ -175,6 +175,25 @@ local function fade(cg, to, dur, cb)
         if type(cb) == "function" then pcall(cb) end
     end
 end
+local function fadeAny(o, to, dur, cb)
+    if not o then return end
+    local isGroup = (o.ClassName == "CanvasGroup")
+    local prop = isGroup and "GroupTransparency" or "BackgroundTransparency"
+    local done = false
+    pcall(function()
+        local ts = game:GetService("TweenService")
+        if not ts then return end
+        local ti = TweenInfo.new(dur or 0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tw = ts:Create(o, ti, { [prop] = to })
+        if type(cb) == "function" then tw.Completed:Connect(cb) end
+        tw:Play()
+        done = true
+    end)
+    if not done then
+        pcall(function() o[prop] = to end)
+        if type(cb) == "function" then pcall(cb) end
+    end
+end
 
 local Axiom = {}
 Axiom.__index = Axiom
@@ -234,10 +253,16 @@ function Axiom.CreateWindow(opts)
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Side,
         BorderSizePixel = 0, ZIndex = 3 })
     inst("UICorner", bar, { CornerRadius = UDim.new(0, 12) })
-    for i, col in ipairs({ Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63) }) do
-        local d = inst("Frame", bar, { Size = UDim2.fromOffset(11, 11),
-            Position = UDim2.fromOffset(16 + (i - 1) * 18, 12), BackgroundColor3 = col, BorderSizePixel = 0, ZIndex = 4 })
+    local dots = { Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63) }
+    for i, col in ipairs(dots) do
+        local d = inst(i == 1 and "TextButton" or "Frame", bar, { Name = i == 1 and "CloseDot" or "Dot",
+            Size = UDim2.fromOffset(11, 11),
+            Position = UDim2.fromOffset(16 + (i - 1) * 18, 12), BackgroundColor3 = col, BorderSizePixel = 0,
+            Text = "", AutoButtonColor = false, ZIndex = 4 })
         corner(d, 6)
+        if i == 1 then
+            connect(d.MouseButton1Click, function() self:_openCloseConfirm() end)
+        end
     end
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
     bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.new(0.5, -150, 0, 7); bt.ZIndex = 4
@@ -542,6 +567,56 @@ function Axiom.CreateWindow(opts)
         end
         return toast
     end
+
+    local confirm = inst("CanvasGroup", gui, { Name = "CloseConfirm", Size = UDim2.fromOffset(300, 168),
+        Position = UDim2.new(0.5, -150, 0.5, -84), BackgroundColor3 = C.Panel,
+        BorderSizePixel = 0, GroupTransparency = 1, Visible = false, ZIndex = 46 })
+    corner(confirm, 12); stroke(confirm, C.Line, 1, 0.15); self._confirm = confirm
+    local qi = inst("ImageLabel", confirm, { Size = UDim2.fromOffset(22, 22),
+        Position = UDim2.fromOffset(18, 16), BackgroundTransparency = 1, ZIndex = 48 })
+    applyIcon(qi, "circle-help", C.Accent)
+    local qt = label(confirm, "你要关闭这个脚本吗？", 15, C.Text, true)
+    qt.Size = UDim2.fromOffset(250, 26); qt.Position = UDim2.fromOffset(48, 14); qt.ZIndex = 48
+    local qd = label(confirm, "关闭后界面将被销毁，需重新运行脚本。", 11, C.Sub)
+    qd.Size = UDim2.fromOffset(260, 20); qd.Position = UDim2.fromOffset(18, 42); qd.ZIndex = 48
+    local function confirmBtn(txt, y, c1, c2, danger)
+        local b = inst("TextButton", confirm, { Size = UDim2.fromOffset(264, 40),
+            Position = UDim2.fromOffset(18, y), BackgroundColor3 = c1,
+            BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 48 })
+        corner(b, 8)
+        local fill = inst("Frame", b, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = c1,
+            BorderSizePixel = 0, ZIndex = 48 })
+        corner(fill, 8); grad(fill, c1, c2, 0)
+        local tx = label(b, txt, 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+        tx.Size = UDim2.fromScale(1, 1); tx.ZIndex = 49
+        return b, tx
+    end
+    local yesBtn = confirmBtn("关闭窗口", 72, Color3.fromRGB(214, 62, 62), Color3.fromRGB(150, 34, 34), true)
+    local noBtn = confirmBtn("取消", 120, C.Track, C.Row, false)
+    local shade = inst("TextButton", gui, { Name = "CloseShade", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false, Visible = false, ZIndex = 45 })
+    self._shade = shade
+
+    local function hideConfirm()
+        fade(confirm, 1, 0.18, function() confirm.Visible = false end)
+        fadeAny(shade, 1, 0.18, function() shade.Visible = false end)
+    end
+    function self:_openCloseConfirm()
+        shade.Visible = true; confirm.Visible = true
+        fadeAny(shade, 0.55, 0.2)
+        fade(confirm, 0, 0.22)
+    end
+    function self:_closeWindow()
+        fade(confirm, 1, 0.28, function()
+            confirm.Visible = false
+            pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
+        end)
+        fadeAny(shade, 1, 0.28, function() shade.Visible = false end)
+    end
+    connect(noBtn.MouseButton1Click, function() hideConfirm() end)
+    connect(yesBtn.MouseButton1Click, function() self:_closeWindow() end)
+    connect(shade.MouseButton1Click, function() hideConfirm() end)
     return self
 end
 return Axiom
