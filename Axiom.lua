@@ -295,6 +295,32 @@ local function tweenProp(o, goal, dur, cb, delay)
         run()
     end
 end
+-- 自定义缓动补间：用于入场动画的曲线变速（style/dir 可指定）
+local function tweenEx(o, goal, dur, style, dir, cb, delay)
+    if not o then return end
+    local function run()
+        local done = false
+        pcall(function()
+            local ts = game:GetService("TweenService")
+            if not ts then return end
+            local ti = TweenInfo.new(dur or 0.6, style or Enum.EasingStyle.Quint,
+                dir or Enum.EasingDirection.InOut)
+            local tw = ts:Create(o, ti, goal)
+            if type(cb) == "function" then tw.Completed:Connect(cb) end
+            tw:Play()
+            done = true
+        end)
+        if not done then
+            pcall(function() for k, v in pairs(goal) do o[k] = v end end)
+            if type(cb) == "function" then pcall(cb) end
+        end
+    end
+    if delay and delay > 0 and type(task) == "table" and type(task.delay) == "function" then
+        pcall(task.delay, delay, run)
+    else
+        run()
+    end
+end
 
 local Axiom = {}
 Axiom.__index = Axiom
@@ -567,7 +593,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             end)
             if okc then spinConn = conn end
         end
-        local wait = 1.5 + (math.random(0, 1000) / 1000) * 1.0
+        local wait = 0.3 + (math.random(0, 1000) / 1000) * 0.7
         pcall(task.delay, wait, function()
             stopSpin()
             self:_showMainUI()
@@ -1162,12 +1188,69 @@ function Axiom.CreateWindow(opts)
         Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
     end
 
-    -- ===== 资源门控：图标模块 / 背景图全部就绪后才淡入主 UI =====
+    -- ===== 入场动画层：画面渐暗 + 中心大标题 + 全屏直角边框收敛为窗口圆角 =====
+    -- 资源（含壁纸）全部就绪后才启动，避免边框先于壁纸出现
+    local introLayer = inst("CanvasGroup", gui, { Name = "IntroLayer", Size = UDim2.fromScale(1, 1),
+        Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+        GroupTransparency = 0, BorderSizePixel = 0, Visible = false, ZIndex = 60 })
+    local introDim = inst("Frame", introLayer, { Name = "IntroDim", Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
+        BorderSizePixel = 0, ZIndex = 61 })
+    local introBorder = inst("Frame", introLayer, { Name = "IntroBorder", Size = UDim2.fromScale(1, 1),
+        Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+        BorderSizePixel = 0, ZIndex = 62 })
+    local introCorner = corner(introBorder, 0)              -- 直角起步
+    local introStroke = stroke(introBorder, C.Border, 3, 0) -- 随层渐隐
+    local introTitle = inst("TextLabel", introLayer, { Name = "IntroTitle",
+        Text = opts.Title or "AXIOM", Font = Enum.Font.GothamBold, TextSize = 56,
+        TextColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1,
+        Size = UDim2.fromScale(0.9, 0.16), Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5), TextXAlignment = Enum.TextXAlignment.Center,
+        TextTransparency = 1, ZIndex = 63 })
+    self._intro = { layer = introLayer, dim = introDim, border = introBorder,
+        corner = introCorner, stroke = introStroke, title = introTitle }
+
+    -- 收敛终点：与 main 的最终视觉矩形对齐（main 带 UIScale=SCALE，视觉尺寸 W*SCALE×H*SCALE 居中）
+    local finW, finH = W * SCALE, H * SCALE
+    local finSize = UDim2.fromOffset(finW, finH)
+    local finPos = UDim2.new(0.5, -finW / 2, 0.5, -finH / 2)
+    local finCorner = 12 * SCALE
+    local titleEndPos = UDim2.new(0.5, 0, 0.5, -finH / 2 + 11)
+    local CURVE = Enum.EasingStyle.Quint -- 曲线变速（缓入缓出）
+    local function playIntro(done)
+        introLayer.Visible = true
+        -- 1) 画面渐暗 + 大字淡入 + 全屏直角边框描边淡入
+        tweenEx(introDim, { BackgroundTransparency = 0.72 }, 0.3, CURVE, Enum.EasingDirection.Out)
+        tweenEx(introTitle, { TextTransparency = 0 }, 0.26, CURVE, Enum.EasingDirection.Out)
+        tweenEx(introStroke, { Transparency = 0 }, 0.26, CURVE, Enum.EasingDirection.Out)
+        -- 2) 同步收敛：边框全屏直角 -> 窗口圆角；标题缩小并平滑上移（曲线变速），到位后终止
+        local CONV = 0.82
+        tweenEx(introBorder, { Size = finSize, Position = finPos }, CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
+        tweenEx(introCorner, { CornerRadius = UDim.new(0, finCorner) }, CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
+        tweenEx(introTitle, { Size = UDim2.fromOffset(240, 26), TextSize = 12, Position = titleEndPos },
+            CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
+        -- 3) 到位后：入场层淡出，主 UI 淡入，动画层销毁
+        local function finish()
+            fade(introLayer, 1, 0.28)
+            tweenEx(introDim, { BackgroundTransparency = 1 }, 0.28)
+            if type(done) == "function" then pcall(done) end
+            if type(task) == "table" and type(task.delay) == "function" then
+                pcall(task.delay, 0.35, function() pcall(function() introLayer:Destroy() end) end)
+            end
+        end
+        if type(task) == "table" and type(task.delay) == "function" then
+            pcall(task.delay, 0.28 + CONV, finish)
+        else
+            finish()
+        end
+    end
+
+    -- ===== 资源门控：图标模块 / 背景图（含壁纸实际下载）全部就绪后才启动入场动画 =====
     local shown = false
     local function reveal()
         if shown then return end
         shown = true
-        fade(main, 0, 0.35)
+        playIntro(function() fade(main, 0, 0.35) end)
     end
     self._reveal = reveal
     local function preload()
@@ -1175,6 +1258,24 @@ function Axiom.CreateWindow(opts)
         if self._wallpaper then
             local asset = resolveImage(bgSrc)
             pcall(function() self._wallpaper.Image = asset or "" end)
+            -- 等壁纸真正加载完成后才入场（避免边框先于壁纸出现）
+            local cpOk, cp = pcall(function() return game:GetService("ContentProvider") end)
+            if cpOk and cp and type(cp.PreloadAsync) == "function" then
+                local fired = false
+                local function ready()
+                    if fired then return end
+                    fired = true
+                    reveal()
+                end
+                pcall(function() cp:PreloadAsync({ self._wallpaper }, function() ready() end) end)
+                -- 兜底：部分执行器/无头环境回调不触发，短延时后强制入场
+                if type(task) == "table" and type(task.delay) == "function" then
+                    pcall(task.delay, 0.3, ready)
+                else
+                    ready()
+                end
+                return
+            end
         end
         reveal()
     end
@@ -1183,7 +1284,7 @@ function Axiom.CreateWindow(opts)
     else
         preload()
     end
-    -- 兜底：极端情况下预加载被阻塞，最多 8 秒后强制显示
+    -- 兜底：极端情况下预加载被阻塞，最多 8 秒后强制入场
     if type(task) == "table" and type(task.delay) == "function" then
         pcall(task.delay, 8, reveal)
     end
