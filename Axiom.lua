@@ -243,10 +243,11 @@ function Axiom.CreateWindow(opts)
     if holder then gui.Parent = holder end
     self.gui = gui
     local W, H = 620, 440
+    local SCALE = 0.65
     local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
-        Position = UDim2.new(0.5, -W/4, 0.5, -H/4), BackgroundColor3 = C.Bg,
+        Position = UDim2.new(0.5, -(W*SCALE)/2, 0.5, -(H*SCALE)/2), BackgroundColor3 = C.Bg,
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
-    inst("UIScale", main, { Scale = 0.5 })
+    inst("UIScale", main, { Scale = SCALE })
     corner(main, 12); stroke(main, C.Line, 1, 0.2); self.main = main
     fade(main, 0, 0.35)
 
@@ -255,7 +256,7 @@ function Axiom.CreateWindow(opts)
     inst("UICorner", bar, { CornerRadius = UDim.new(0, 12) })
     local dots = { Color3.fromRGB(255, 95, 86), Color3.fromRGB(255, 189, 46), Color3.fromRGB(39, 201, 63) }
     for i, col in ipairs(dots) do
-        local d = inst(i == 1 and "TextButton" or "Frame", bar, { Name = i == 1 and "CloseDot" or "Dot",
+        local d = inst("TextButton", bar, { Name = i == 1 and "CloseDot" or "Dot",
             Size = UDim2.fromOffset(11, 11),
             Position = UDim2.fromOffset(16 + (i - 1) * 18, 12), BackgroundColor3 = col, BorderSizePixel = 0,
             Text = "", AutoButtonColor = false, ZIndex = 4 })
