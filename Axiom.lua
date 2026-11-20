@@ -277,7 +277,8 @@ local C = {
     Bg = Color3.fromRGB(24, 26, 31), Side = Color3.fromRGB(29, 32, 38),
     Bar = Color3.fromRGB(18, 20, 25),
     Panel = Color3.fromRGB(32, 35, 42), Row = Color3.fromRGB(36, 40, 48),
-    Line = Color3.fromRGB(52, 57, 67), Text = Color3.fromRGB(232, 236, 243),
+    Line = Color3.fromRGB(52, 57, 67), Border = Color3.fromRGB(88, 96, 112),
+    Text = Color3.fromRGB(232, 236, 243),
     Sub = Color3.fromRGB(144, 152, 166), Accent = Color3.fromRGB(88, 150, 255),
     Accent2 = Color3.fromRGB(120, 190, 255), Green = Color3.fromRGB(76, 209, 153),
     AccentW = Color3.fromRGB(172, 208, 255),
@@ -332,7 +333,7 @@ function Axiom.CreateWindow(opts)
         Position = UDim2.new(0.5, -(W*SCALE)/2, 0.5, -(H*SCALE)/2), BackgroundColor3 = C.Bg,
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
     inst("UIScale", main, { Scale = SCALE })
-    corner(main, 12); stroke(main, C.Line, 1, 0.2); self.main = main
+    corner(main, 12); stroke(main, C.Border, 1.5, 0); self.main = main
     fade(main, 0, 0.35)
 
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
@@ -355,7 +356,7 @@ function Axiom.CreateWindow(opts)
         end
     end
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
-    bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.new(0.5, -150, 0, 7); bt.ZIndex = 4
+    bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.fromOffset(160, 7); bt.ZIndex = 4
     local plusBtn = inst("ImageButton", bar, { Name = "ExpandPlus", Size = UDim2.fromOffset(16, 16),
         Position = UDim2.fromOffset(126, 9), BackgroundTransparency = 1, ImageTransparency = 1,
         AutoButtonColor = false, Visible = false, ZIndex = 5 })
@@ -385,7 +386,7 @@ function Axiom.CreateWindow(opts)
 
     -- ===== 黄点最小化 / plus 展开 =====
     local TITLE_W = 150
-    local btBasePos = UDim2.new(0.5, -150, 0, 7)
+    local btBasePos = UDim2.fromOffset(160, 7)
     local btBaseAlign = Enum.TextXAlignment.Center
     local barBaseW = UDim2.new(1, 0, 0, 34)
     self._minimized = false
@@ -406,8 +407,9 @@ function Axiom.CreateWindow(opts)
         tweenProp(main, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
         -- 标题栏从右向左收起，仅剩标题文字区（含右侧 plus 预留位）
         tweenProp(bar, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
-        -- 标题文字左移并改左对齐
-        tweenProp(bt, { Position = UDim2.fromOffset(10, 7), Size = UDim2.fromOffset(TITLE_W - 40, 20) }, 0.34)
+        -- 标题文字左移并改左对齐（延迟到三色点渐隐完成后再移动，避免文字压到尚未消失的点上）
+        -- 纯 Offset 定位，配合 bar 收起做精确线性位移，不再用 Scale+Offset 混合插值导致移过头
+        tweenProp(bt, { Position = UDim2.fromOffset(10, 7), Size = UDim2.fromOffset(TITLE_W - 40, 20) }, 0.3, nil, 0.32)
         pcall(function() bt.TextXAlignment = Enum.TextXAlignment.Left end)
         -- 预留位置后显示 plus 图标
         plusBtn.Visible = true
@@ -439,27 +441,31 @@ function Axiom.CreateWindow(opts)
         end
     end
 
-    -- ===== 拖动标题文字移动窗口 =====
+    -- ===== 拖动标题栏 / 标题文字移动窗口 =====
     local dragging, dragStart, mainStart = false, nil, nil
-    connect(bt.InputBegan, function(input)
-        local ok, typ = pcall(function() return input.UserInputType end)
-        if not ok or typ ~= Enum.UserInputType.MouseButton1 then return end
-        dragging = true
-        dragStart = { x = input.Position.X, y = input.Position.Y }
-        mainStart = { x = main.Position.X.Offset, y = main.Position.Y.Offset }
-    end)
-    connect(bt.InputChanged, function(input)
-        if not dragging then return end
-        local ok, typ = pcall(function() return input.UserInputType end)
-        if not ok or typ ~= Enum.UserInputType.MouseMovement then return end
-        local dx = input.Position.X - dragStart.x
-        local dy = input.Position.Y - dragStart.y
-        main.Position = UDim2.new(main.Position.X.Scale, mainStart.x + dx,
-            main.Position.Y.Scale, mainStart.y + dy)
-    end)
-    connect(bt.InputEnded, function()
-        dragging = false
-    end)
+    local function attachDrag(target)
+        connect(target.InputBegan, function(input)
+            local ok, typ = pcall(function() return input.UserInputType end)
+            if not ok or typ ~= Enum.UserInputType.MouseButton1 then return end
+            dragging = true
+            dragStart = { x = input.Position.X, y = input.Position.Y }
+            mainStart = { x = main.Position.X.Offset, y = main.Position.Y.Offset }
+        end)
+        connect(target.InputChanged, function(input)
+            if not dragging then return end
+            local ok, typ = pcall(function() return input.UserInputType end)
+            if not ok or typ ~= Enum.UserInputType.MouseMovement then return end
+            local dx = input.Position.X - dragStart.x
+            local dy = input.Position.Y - dragStart.y
+            main.Position = UDim2.new(main.Position.X.Scale, mainStart.x + dx,
+                main.Position.Y.Scale, mainStart.y + dy)
+        end)
+        connect(target.InputEnded, function()
+            dragging = false
+        end)
+    end
+    attachDrag(bar)   -- 整个标题栏可拖（含三色点旁边的空白区）
+    attachDrag(bt)    -- 标题文字本身也可拖
 
     function self:AddTab(name, icon)
         self._tabCount = self._tabCount + 1
