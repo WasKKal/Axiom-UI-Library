@@ -56,4 +56,30 @@ Tab:AddButton({
 })
 Slider:SetValue(120)
 Dropdown:Select("Mono", true)
+
+local TabVisual = Win:AddTab("Appearance", "palette")
+TabVisual:AddToggle({ Title = "Transparency", Desc = "窗口半透明", Icon = "toggle-right", Default = false })
+TabVisual:AddSlider({ Title = "Corner Radius", Desc = "圆角大小", Icon = "gauge", Min = 0, Max = 24, Default = 12 })
+TabVisual:AddDropdown({
+    Title = "Font Style", Desc = "字体风格", Icon = "list-filter",
+    Options = { "Source Sans", "Gotham", "Roboto", "Arial", "Verdana", "Segoe UI", "Comic Sans" },
+    Default = "Gotham",
+})
+TabVisual:AddColorPicker({ Title = "Highlight", Desc = "高亮颜色", Icon = "palette", Default = Color3.fromRGB(76, 209, 153) })
+
+local TabSystem = Win:AddTab("System", "monitor")
+TabSystem:AddToggle({ Title = "Auto Launch", Desc = "启动时自动运行", Icon = "toggle-right", Default = true })
+TabSystem:AddToggle({ Title = "Notifications", Desc = "启用通知", Icon = "bell", Default = true })
+TabSystem:AddSlider({ Title = "Refresh Rate", Desc = "刷新频率", Icon = "gauge", Min = 30, Max = 240, Default = 60 })
+TabSystem:AddDropdown({
+    Title = "Language", Desc = "界面语言", Icon = "list-filter", Multi = true,
+    Options = { "简体中文", "English", "日本語", "Français" }, Default = { "简体中文" },
+})
+
+local TabAbout = Win:AddTab("About", "circle-help")
+TabAbout:AddParagraph({ Title = "Axiom UI Library", Desc = "关于", Icon = "align-left",
+    Text = "主从分栏布局 · Lucide 本地缓存 · 多选下拉 · 全窗口渐隐。滚动容器支持竖向滚动，下拉菜单可溢出窗口。" })
+TabAbout:AddButton({ Title = "GitHub", Desc = "打开仓库", Icon = "send",
+    Callback = function() print("https://github.com/WasKKal/Axiom-UI-Library") end })
+
 Win:ShowNotify({ Title = "Ready", Info = "Axiom UI Library · 图标缓存于 lucide-icon-latest/" })
