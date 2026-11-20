@@ -70,6 +70,34 @@ local function loadLucide()
     if mod then LucideModule = mod; LucideSource = "network" end
     return mod
 end
+-- ===== 背景图资源加载：http(s) 优先缓存为本地文件 + getcustomasset，失败回退原始 URL =====
+local ImageCache = {}
+local function resolveImage(src)
+    if type(src) ~= "string" or #src == 0 then return nil end
+    if ImageCache[src] ~= nil then return ImageCache[src] or nil end
+    local result = nil
+    pcall(function()
+        if src:match("^rbxasset") or src:match("^%a[%w+.-]*://") == nil then
+            result = src
+        else
+            local content = httpGet(src)
+            if type(content) == "string" and #content > 100 then
+                if hasFs() and type(getcustomasset) == "function" then
+                    local name = "axiom_bg_" .. tostring(#src % 100000) .. ".png"
+                    pcall(writefile, name, content)
+                    local okA, asset = pcall(getcustomasset, name)
+                    if okA and type(asset) == "string" and #asset > 0 then
+                        result = asset
+                    end
+                end
+            end
+            if not result then result = src end
+        end
+    end)
+    if result == nil then result = src end
+    ImageCache[src] = result
+    return result
+end
 local function markSource()
     local function writeTo(g)
         if type(g) ~= "table" then return false end
@@ -588,7 +616,7 @@ function Axiom.CreateWindow(opts)
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
     inst("UIScale", main, { Scale = SCALE })
     corner(main, 12); stroke(main, C.Border, 1.5, 0); self.main = main
-    fade(main, 0, 0.35)
+    -- main 保持隐藏(GroupTransparency=1)，待图标/壁纸等资源全部就绪后再淡入（见 _finishAssets）
 
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
         BorderSizePixel = 0, ZIndex = 3 })
@@ -623,8 +651,26 @@ function Axiom.CreateWindow(opts)
         GroupTransparency = 0, BorderSizePixel = 0, ZIndex = 2 })
     self._contentLayer = contentLayer
 
+    -- 壁纸：仅主 UI 内可见（登录层覆盖其上时不显示）；自动裁剪填充+圆角；暗化遮罩保证控件可读
+    self._wallpaper = nil
+    local bgSrc = opts.Background
+    local hasBg = type(bgSrc) == "string" and #bgSrc > 0
+    if hasBg then
+        local asset = resolveImage(bgSrc)
+        local wallpaper = inst("ImageLabel", contentLayer, { Name = "Wallpaper",
+            Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
+            Image = asset or "", ScaleType = Enum.ScaleType.Crop,
+            BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 1, ImageTransparency = 0 })
+        corner(wallpaper, 12)
+        inst("Frame", contentLayer, { Name = "WallpaperDim", Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.42,
+            BorderSizePixel = 0, ZIndex = 1 })
+        self._wallpaper = wallpaper
+    end
+
     local side = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(176, H - 34),
-        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 2,
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Side,
+        BackgroundTransparency = hasBg and 0.45 or 0, BorderSizePixel = 0, ZIndex = 2,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
         HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
         CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
@@ -1120,6 +1166,32 @@ function Axiom.CreateWindow(opts)
     -- LoginInfo 启动页：覆盖在主 UI 之上，加载脚本后切入主 UI
     if opts.LoginInfo == true then
         Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
+    end
+
+    -- ===== 资源门控：图标模块 / 背景图全部就绪后才淡入主 UI =====
+    local shown = false
+    local function reveal()
+        if shown then return end
+        shown = true
+        fade(main, 0, 0.35)
+    end
+    self._reveal = reveal
+    local function preload()
+        pcall(function() loadLucide() end)
+        if self._wallpaper then
+            local asset = resolveImage(bgSrc)
+            pcall(function() self._wallpaper.Image = asset or "" end)
+        end
+        reveal()
+    end
+    if type(task) == "table" and type(task.spawn) == "function" then
+        pcall(task.spawn, preload)
+    else
+        preload()
+    end
+    -- 兜底：极端情况下预加载被阻塞，最多 8 秒后强制显示
+    if type(task) == "table" and type(task.delay) == "function" then
+        pcall(task.delay, 8, reveal)
     end
     return self
 end
