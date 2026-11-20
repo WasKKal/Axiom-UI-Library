@@ -995,8 +995,6 @@ function Axiom.CreateWindow(opts)
                         ui.row.BackgroundColor3 = on and Color3.new(1, 1, 1) or C.Row
                         ui.row.BackgroundTransparency = on and 0.86 or 0
                         ui.txt.TextColor3 = on and Color3.fromRGB(18, 18, 22) or C.Text
-                        ui.chk.Visible = on
-                        ui.chk.ImageColor3 = on and Color3.fromRGB(18, 18, 22) or C.Accent
                     end
                 end
             end
@@ -1008,12 +1006,8 @@ function Axiom.CreateWindow(opts)
                     BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 15 })
                 corner(rb, 5)
                 local rl = label(rb, tostring(opt), 12, C.Text, false, Enum.TextXAlignment.Center)
-                rl.Size = UDim2.new(1, -22, 1, 0); rl.ZIndex = 16
-                local chk = inst("ImageLabel", rb, { Name = "checkicon", Size = UDim2.fromOffset(13, 13),
-                    Position = UDim2.new(1, -20, 0.5, -6.5), BackgroundTransparency = 1,
-                    Visible = false, ZIndex = 17 })
-                applyIcon(chk, "check", C.Accent)
-                checks[opt] = { row = rb, txt = rl, chk = chk }
+                rl.Size = UDim2.fromScale(1, 1); rl.ZIndex = 16
+                checks[opt] = { row = rb, txt = rl }
                 connect(rb.MouseButton1Click, function()
                     if multi then
                         selected[opt] = not selected[opt]
