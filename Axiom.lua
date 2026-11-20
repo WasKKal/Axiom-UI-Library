@@ -283,6 +283,7 @@ local C = {
     Accent2 = Color3.fromRGB(120, 190, 255), Green = Color3.fromRGB(76, 209, 153),
     AccentW = Color3.fromRGB(172, 208, 255),
     Track = Color3.fromRGB(58, 63, 74),
+    DeepGray1 = Color3.fromRGB(78, 84, 94), DeepGray2 = Color3.fromRGB(56, 61, 70),
 }
 local FONT = Enum.Font.SourceSans
 local FONT_B = Enum.Font.GothamBold
@@ -492,7 +493,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     uname.Size = UDim2.fromOffset(rightW - 20, 26)
     uname.Position = UDim2.fromOffset(10, 44 + avSize + 12); uname.ZIndex = 27
 
-    local function loginBtn(name, txt, y, a1, a2, cb)
+    local function loginBtn(name, txt, y, a1, a2, cb, textGrad)
         local b = inst("TextButton", right, { Name = name, Size = UDim2.fromOffset(rightW - 36, 40),
             Position = UDim2.fromOffset(18, y), BackgroundColor3 = a1,
             BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 27 })
@@ -502,6 +503,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         corner(fill, 8); grad(fill, a1, a2, 0)
         local tx = label(b, txt, 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
         tx.Size = UDim2.fromScale(1, 1); tx.ZIndex = 28
+        if textGrad then grad(tx, textGrad[1], textGrad[2], textGrad[3] or 90) end
         connect(b.MouseButton1Click, function() if type(cb) == "function" then pcall(cb) end end)
         return b
     end
@@ -509,8 +511,8 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, function()
         self:_showMainUI()
         if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
-    end)
-    loginBtn("UnloadScript", "卸载脚本", by + 52, C.Track, C.Row, function()
+    end, { C.AccentW, Color3.new(1, 1, 1), 90 })
+    loginBtn("UnloadScript", "卸载脚本", by + 52, C.DeepGray1, C.DeepGray2, function()
         if type(opts.OnUnloadScript) == "function" then pcall(opts.OnUnloadScript) end
         self:_closeWindow()
     end)
@@ -659,31 +661,40 @@ function Axiom.CreateWindow(opts)
         end
     end
 
-    -- ===== 拖动标题栏 / 标题文字移动窗口 =====
+    -- ===== 拖动标题栏 / 标题文字移动窗口（UserInputService 全局监听，鼠标移出标题栏仍可拖）=====
+    local UIS = nil
+    pcall(function() UIS = game:GetService("UserInputService") end)
     local dragging, dragStart, mainStart = false, nil, nil
+    local function startDrag(input)
+        local ok, typ = pcall(function() return input.UserInputType end)
+        if not ok then return end
+        if typ ~= Enum.UserInputType.MouseButton1 and typ ~= Enum.UserInputType.Touch then return end
+        dragging = true
+        dragStart = { x = input.Position.X, y = input.Position.Y }
+        mainStart = { x = main.Position.X.Offset, y = main.Position.Y.Offset,
+            sx = main.Position.X.Scale, sy = main.Position.Y.Scale }
+    end
     local function attachDrag(target)
-        connect(target.InputBegan, function(input)
-            local ok, typ = pcall(function() return input.UserInputType end)
-            if not ok or typ ~= Enum.UserInputType.MouseButton1 then return end
-            dragging = true
-            dragStart = { x = input.Position.X, y = input.Position.Y }
-            mainStart = { x = main.Position.X.Offset, y = main.Position.Y.Offset }
-        end)
-        connect(target.InputChanged, function(input)
+        connect(target.InputBegan, startDrag)
+    end
+    attachDrag(bar)   -- 整个标题栏可拖（含三色点旁边的空白区）
+    attachDrag(bt)    -- 标题文字本身也可拖
+    if UIS then
+        connect(UIS.InputChanged, function(input)
             if not dragging then return end
             local ok, typ = pcall(function() return input.UserInputType end)
             if not ok or typ ~= Enum.UserInputType.MouseMovement then return end
             local dx = input.Position.X - dragStart.x
             local dy = input.Position.Y - dragStart.y
-            main.Position = UDim2.new(main.Position.X.Scale, mainStart.x + dx,
-                main.Position.Y.Scale, mainStart.y + dy)
+            main.Position = UDim2.new(mainStart.sx, mainStart.x + dx, mainStart.sy, mainStart.y + dy)
         end)
-        connect(target.InputEnded, function()
-            dragging = false
+        connect(UIS.InputEnded, function(input)
+            local ok, typ = pcall(function() return input.UserInputType end)
+            if ok and (typ == Enum.UserInputType.MouseButton1 or typ == Enum.UserInputType.Touch) then
+                dragging = false
+            end
         end)
     end
-    attachDrag(bar)   -- 整个标题栏可拖（含三色点旁边的空白区）
-    attachDrag(bt)    -- 标题文字本身也可拖
 
     function self:AddTab(name, icon)
         self._tabCount = self._tabCount + 1
