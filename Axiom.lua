@@ -342,9 +342,16 @@ local C = {
 local FONT = Enum.Font.SourceSans
 local FONT_B = Enum.Font.GothamBold
 local function inst(cls, parent, props)
-    local o = Instance.new(cls)
-    if props then for k, v in pairs(props) do o[k] = v end end
-    if parent then o.Parent = parent end
+    local okNew, o = pcall(Instance.new, cls)
+    if not okNew or not o then return nil end
+    -- 逐属性 pcall：真实执行器的类可能缺少某些属性(如 ScrollingFrame.HorizontalScrollBarEnabled)，
+    -- 单个属性赋值失败只跳过该项，不再让整个脚本崩溃
+    if props then
+        for k, v in pairs(props) do
+            pcall(function() o[k] = v end)
+        end
+    end
+    if parent then pcall(function() o.Parent = parent end) end
     return o
 end
 local function corner(p, r) return inst("UICorner", p, { CornerRadius = UDim.new(0, r or 12) }) end
@@ -641,8 +648,13 @@ function Axiom.CreateWindow(opts)
         Position = UDim2.new(0.5, -(W*SCALE)/2, 0.5, -(H*SCALE)/2), BackgroundColor3 = C.Bg,
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
     inst("UIScale", main, { Scale = SCALE })
-    corner(main, 12); stroke(main, C.Border, 1.5, 0); self.main = main
-    -- main 保持隐藏(GroupTransparency=1)，待图标/壁纸等资源全部就绪后再淡入（见 _finishAssets）
+    corner(main, 12)
+    local mainStroke = stroke(main, C.Border, 1.5, 1)  -- 初始隐藏边框：真实执行器 UIStroke 不受 GroupTransparency 约束
+    -- 注册"完全可见"基准为 0 并把当前值保持隐藏，reveal 时 fade(main,0) 会按基准把它补间显现，
+    -- 避免入场动画收敛途中主窗口边框提前露出
+    if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
+    self.main = main
+    -- main 保持隐藏(GroupTransparency=1)，待图标/壁纸等资源全部就绪后再淡入（见资源门控）
 
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
         BorderSizePixel = 0, ZIndex = 3 })
@@ -1021,7 +1033,6 @@ function Axiom.CreateWindow(opts)
                 Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
                 CanvasSize = UDim2.new(0, 0, 0, contentH),
                 ScrollingDirection = Enum.ScrollingDirection.Y,
-                HorizontalScrollBarEnabled = false, VerticalScrollBarEnabled = true,
                 ScrollBarThickness = 3, BackgroundTransparency = 1,
                 BorderSizePixel = 0, Active = true, ClipsDescendants = true, ZIndex = 14 })
             local checks = {}
@@ -1212,7 +1223,7 @@ function Axiom.CreateWindow(opts)
         Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 62 })
     local introCorner = corner(introBorder, 0)              -- 直角起步
-    local introStroke = stroke(introBorder, C.Border, 3, 0) -- 随层渐隐
+    local introStroke = stroke(introBorder, C.Border, 3, 1) -- 初始隐藏，随动画淡入/随层淡出
     local introTitle = inst("TextLabel", introLayer, { Name = "IntroTitle",
         Text = opts.Title or "AXIOM", Font = Enum.Font.GothamBold, TextSize = 56,
         TextColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1,
