@@ -1008,10 +1008,22 @@ function Axiom.CreateWindow(opts)
             corner(cap, 7); stroke(cap, C.Line, 1, 0)
             local cur = label(cap, display(), 12, C.Text, false, Enum.TextXAlignment.Center)
             cur.Size = UDim2.fromScale(1, 1); cur.ZIndex = 4
-            local menu = inst("CanvasGroup", main, { Name = "DropMenu", Size = UDim2.fromOffset(140, 8 + #options * 26),
+            local MENU_MAX_H = 160
+            local contentH = 8 + #options * 26
+            local menuH = contentH < MENU_MAX_H and contentH or MENU_MAX_H
+            -- Active=true：菜单整体捕获点击/触摸，阻止穿透到窗口下方控件
+            local menu = inst("CanvasGroup", main, { Name = "DropMenu", Size = UDim2.fromOffset(140, menuH),
                 Position = UDim2.fromOffset(176 + rx - 140, 34 + y + 36), BackgroundColor3 = C.Panel,
-                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
+                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14, Active = true })
             corner(menu, 7); stroke(menu, C.Line, 1, 0)
+            -- 滑动容器：高度固定为 menuH，仅纵向滚动，禁用左右滑动
+            local scroller = inst("ScrollingFrame", menu, { Name = "DropScroller",
+                Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
+                CanvasSize = UDim2.new(0, 0, 0, contentH),
+                ScrollingDirection = Enum.ScrollingDirection.Y,
+                HorizontalScrollBarEnabled = false, VerticalScrollBarEnabled = true,
+                ScrollBarThickness = 3, BackgroundTransparency = 1,
+                BorderSizePixel = 0, Active = true, ClipsDescendants = true, ZIndex = 14 })
             local checks = {}
             local function refreshChecks()
                 for _, opt in ipairs(options) do
@@ -1027,7 +1039,7 @@ function Axiom.CreateWindow(opts)
             local function openMenu() menu.Visible = true; fade(menu, 0, 0.18) end
             local function closeMenu() fade(menu, 1, 0.18, function() menu.Visible = false end) end
             for i, opt in ipairs(options) do
-                local rb = inst("TextButton", menu, { Size = UDim2.new(1, -8, 0, 22),
+                local rb = inst("TextButton", scroller, { Size = UDim2.new(1, -8, 0, 22),
                     Position = UDim2.fromOffset(4, 4 + (i - 1) * 26), BackgroundColor3 = C.Row,
                     BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 15 })
                 corner(rb, 5)
