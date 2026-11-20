@@ -319,6 +319,224 @@ local function label(p, txt, size, col, bold, xal)
     })
 end
 
+-- 估算文本渲染高度：优先 TextService 实测，失败按字数粗估（用于通知/登录段落高度自适应）
+local function estimateTextHeight(text, size, width)
+    size = size or 12; width = width or 200
+    local h = nil
+    pcall(function()
+        local ts = game:GetService("TextService")
+        if ts and type(ts.GetTextSize) == "function" then
+            local v = ts:GetTextSize(tostring(text or ""), size, FONT, Vector2.new(width, 10000))
+            if v then h = v.Y end
+        end
+    end)
+    if h and h > 0 then return math.ceil(h) + 4 end
+    local str = tostring(text or "")
+    local per = math.max(1, math.floor(width / (size * 0.62)))
+    local lines, cur = 1, 0
+    for i = 1, #str do
+        local b = str:byte(i)
+        local w = (b >= 128) and 1 or 0.55
+        cur = cur + w
+        if cur >= per then lines = lines + 1; cur = 0 end
+    end
+    return math.ceil(lines * (size * 1.45)) + 6
+end
+
+-- ===== 全局 Notify：右上角堆叠，高度自适应，入场/退场动画 =====
+local notifyState = nil
+local function notifyEnsure()
+    if notifyState and notifyState.gui and notifyState.gui.Parent then return notifyState end
+    local gui = inst("ScreenGui", nil, { Name = "AxiomNotify", ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100001 })
+    local holder = resolveHolder()
+    if holder then gui.Parent = holder end
+    local stack = inst("Frame", gui, { Name = "Stack", Size = UDim2.fromOffset(0, 0),
+        Position = UDim2.new(1, -340, 0, 16), BackgroundTransparency = 1, ZIndex = 1 })
+    notifyState = { gui = gui, stack = stack, list = {} }
+    return notifyState
+end
+local function notifyReflow()
+    if not notifyState then return end
+    local y = 0
+    for _, n in ipairs(notifyState.list) do
+        if n.alive then
+            tweenProp(n.frame, { Position = UDim2.fromOffset(0, y) }, 0.26)
+            y = y + n.h + 10
+        end
+    end
+end
+function Axiom.Notify(o)
+    o = o or {}
+    local st = notifyEnsure()
+    local text = tostring(o.Text or o.Info or "")
+    local title = tostring(o.Title or "Axiom")
+    local NW, textW = 320, 280
+    local th = estimateTextHeight(text, 12, textW)
+    local h = math.max(70, 34 + th + 18)
+    local accent = C.Accent
+    if o.Type == "success" then accent = C.Green
+    elseif o.Type == "warning" then accent = Color3.fromRGB(255, 189, 46)
+    elseif o.Type == "error" then accent = Color3.fromRGB(255, 95, 86) end
+    local frame = inst("CanvasGroup", st.stack, { Name = "Notice", Size = UDim2.fromOffset(NW, h),
+        Position = UDim2.fromOffset(40, 0), BackgroundColor3 = C.Panel,
+        BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 2 })
+    corner(frame, 10); stroke(frame, accent, 1.5, 0.25)
+    local rail = inst("Frame", frame, { Size = UDim2.fromOffset(3, h - 16),
+        Position = UDim2.fromOffset(0, 8), BackgroundColor3 = accent,
+        BorderSizePixel = 0, ZIndex = 3 })
+    corner(rail, 2)
+    local ic = inst("ImageLabel", frame, { Size = UDim2.fromOffset(20, 20),
+        Position = UDim2.fromOffset(14, 9), BackgroundTransparency = 1, ZIndex = 3 })
+    applyIcon(ic, o.Icon or ((o.Type == "success") and "circle-check" or "bell"), accent)
+    local tt = label(frame, title, 13, C.Text, true)
+    tt.Size = UDim2.fromOffset(NW - 52, 18); tt.Position = UDim2.fromOffset(42, 8); tt.ZIndex = 3
+    local dd = label(frame, text, 12, C.Sub)
+    dd.Size = UDim2.fromOffset(textW, th); dd.Position = UDim2.fromOffset(20, 30)
+    dd.TextWrapped = true; dd.ZIndex = 3
+    local entry = { frame = frame, h = h, alive = true }
+    st.list[#st.list + 1] = entry
+    notifyReflow()
+    fade(frame, 0, 0.3)
+    local function dismiss()
+        if not entry.alive then return end
+        entry.alive = false
+        tweenProp(frame, { Position = UDim2.fromOffset(40, frame.Position.Y.Offset) }, 0.28)
+        fade(frame, 1, 0.3, function()
+            for i, x in ipairs(st.list) do if x == entry then table.remove(st.list, i); break end end
+            pcall(function() if frame.Parent then frame:Destroy() end end)
+            notifyReflow()
+        end)
+    end
+    if type(task) == "table" and type(task.delay) == "function" then
+        pcall(task.delay, o.Duration or 4, dismiss)
+    end
+    return { Frame = frame, Dismiss = dismiss }
+end
+
+-- ===== LoginInfo 启动页构建器（覆盖在主 UI 之上；加载脚本后切到主 UI）=====
+function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
+    local W, H = 620, 440
+    local leftW = math.floor(W * 2 / 3)
+    local rightW = W - leftW
+    local bodyH = H - 34
+    self._isLogin = true
+
+    local layer = inst("CanvasGroup", main, { Name = "LoginLayer",
+        Size = UDim2.fromOffset(W, bodyH), Position = UDim2.fromOffset(0, 34),
+        BackgroundColor3 = C.Bg, BorderSizePixel = 0, GroupTransparency = 0, ZIndex = 25 })
+    self._loginLayer = layer
+
+    -- 左侧 2/3：大标题 + 更新日志段落（整行、自动换行、动态高度）
+    local left = inst("ScrollingFrame", layer, { Size = UDim2.fromOffset(leftW, bodyH),
+        Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+        BorderSizePixel = 0, ZIndex = 26,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+        VerticalScrollBarInset = Enum.ScrollBarInset.None,
+        CanvasSize = UDim2.new(0, 0, 0, bodyH), ClipsDescendants = false })
+    local big = label(left, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
+    big.Size = UDim2.fromOffset(leftW - 40, 32); big.Position = UDim2.fromOffset(24, 16); big.ZIndex = 27
+    inst("Frame", left, { Size = UDim2.fromOffset(leftW - 48, 1),
+        Position = UDim2.fromOffset(24, 54), BackgroundColor3 = C.Line,
+        BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
+    local yCursor = 68
+    function self:AddLoginParagraph(o)
+        o = o or {}
+        local text = tostring(o.Text or "")
+        local tw = leftW - 48
+        local th = estimateTextHeight(text, 12, tw)
+        local yy = yCursor
+        local t = label(left, o.Title or "Update", 14, C.Text, true)
+        t.Size = UDim2.fromOffset(tw, 20); t.Position = UDim2.fromOffset(24, yy); t.ZIndex = 27
+        local d = label(left, text, 12, C.Sub)
+        d.Size = UDim2.fromOffset(tw, th); d.Position = UDim2.fromOffset(24, yy + 24)
+        d.TextWrapped = true; d.ZIndex = 27
+        yCursor = yy + 24 + th + 16
+        left.CanvasSize = UDim2.new(0, 0, 0, math.max(bodyH, yCursor + 20))
+        local obj = { _win = self }
+        function obj:SetText(v)
+            local nv = tostring(v or "")
+            d.Text = nv
+            d.Size = UDim2.fromOffset(tw, estimateTextHeight(nv, 12, tw))
+        end
+        function obj:Get() return d.Text end
+        return obj
+    end
+
+    -- 右侧 1/3：圆形头像 + 用户名 + 两个按钮
+    local right = inst("Frame", layer, { Size = UDim2.fromOffset(rightW, bodyH),
+        Position = UDim2.fromOffset(leftW, 0), BackgroundColor3 = C.Side,
+        BorderSizePixel = 0, ZIndex = 26 })
+    inst("Frame", right, { Size = UDim2.fromOffset(1, bodyH),
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Line,
+        BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
+    local avSize = 96
+    local avatar = inst("ImageLabel", right, { Name = "Avatar", Size = UDim2.fromOffset(avSize, avSize),
+        Position = UDim2.fromOffset((rightW - avSize) / 2, 44), BackgroundColor3 = C.Row,
+        BorderSizePixel = 0, ZIndex = 27 })
+    corner(avatar, avSize / 2); stroke(avatar, C.Accent, 1.5, 0.4)
+    local lpName = "Player"
+    pcall(function()
+        local Players = game:GetService("Players")
+        local lp = Players and Players.LocalPlayer
+        if lp then
+            lpName = tostring(lp.Name)
+            if type(Players.GetUserThumbnailAsync) == "function" then
+                avatar.Image = Players:GetUserThumbnailAsync(lp.UserId,
+                    Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+            end
+        end
+    end)
+    local uname = label(right, lpName, 15, C.Text, true, Enum.TextXAlignment.Center)
+    uname.Size = UDim2.fromOffset(rightW - 20, 26)
+    uname.Position = UDim2.fromOffset(10, 44 + avSize + 12); uname.ZIndex = 27
+
+    local function loginBtn(name, txt, y, a1, a2, cb)
+        local b = inst("TextButton", right, { Name = name, Size = UDim2.fromOffset(rightW - 36, 40),
+            Position = UDim2.fromOffset(18, y), BackgroundColor3 = a1,
+            BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 27 })
+        corner(b, 8)
+        local fill = inst("Frame", b, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = a1,
+            BorderSizePixel = 0, ZIndex = 27 })
+        corner(fill, 8); grad(fill, a1, a2, 0)
+        local tx = label(b, txt, 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+        tx.Size = UDim2.fromScale(1, 1); tx.ZIndex = 28
+        connect(b.MouseButton1Click, function() if type(cb) == "function" then pcall(cb) end end)
+        return b
+    end
+    local by = 44 + avSize + 12 + 36
+    loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, function()
+        self:_showMainUI()
+        if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
+    end)
+    loginBtn("UnloadScript", "卸载脚本", by + 52, C.Track, C.Row, function()
+        if type(opts.OnUnloadScript) == "function" then pcall(opts.OnUnloadScript) end
+        self:_closeWindow()
+    end)
+
+    function self:_showMainUI()
+        if not self._isLogin then return end
+        self._isLogin = false
+        fade(layer, 1, 0.4, function() layer.Visible = false end)
+        contentLayer.GroupTransparency = 1; contentLayer.Visible = true
+        fade(contentLayer, 0, 0.45)
+        for _, d in ipairs(dotList) do
+            d.Visible = true; d.Active = true
+            pcall(function() d.BackgroundTransparency = 1 end)
+            fadeAny(d, 0, 0.45)
+        end
+    end
+
+    -- 初始：隐藏主 UI 的三色点与内容区，仅显示登录层
+    contentLayer.Visible = false
+    for _, d in ipairs(dotList) do
+        d.Visible = false; d.Active = false
+        pcall(function() d.BackgroundTransparency = 1 end)
+    end
+    return self
+end
+
 function Axiom.CreateWindow(opts)
     opts = opts or {}
     local self = setmetatable({ _rows = 0, _tabs = {}, _activeTab = nil }, Axiom)
@@ -853,6 +1071,11 @@ function Axiom.CreateWindow(opts)
     connect(noBtn.MouseButton1Click, function() hideConfirm() end)
     connect(yesBtn.MouseButton1Click, function() self:_closeWindow() end)
     connect(shade.MouseButton1Click, function() hideConfirm() end)
+
+    -- LoginInfo 启动页：覆盖在主 UI 之上，加载脚本后切入主 UI
+    if opts.LoginInfo == true then
+        Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
+    end
     return self
 end
 return Axiom
