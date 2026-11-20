@@ -242,6 +242,24 @@ local function fadeAny(o, to, dur, cb)
         if type(cb) == "function" then pcall(cb) end
     end
 end
+-- 通用补间：对实例 o 的多个属性同时补间到 goal，带 pcall 兜底（失败立即设值）
+local function tweenProp(o, goal, dur, cb)
+    if not o then return end
+    local done = false
+    pcall(function()
+        local ts = game:GetService("TweenService")
+        if not ts then return end
+        local ti = TweenInfo.new(dur or 0.24, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tw = ts:Create(o, ti, goal)
+        if type(cb) == "function" then tw.Completed:Connect(cb) end
+        tw:Play()
+        done = true
+    end)
+    if not done then
+        pcall(function() for k, v in pairs(goal) do o[k] = v end end)
+        if type(cb) == "function" then pcall(cb) end
+    end
+end
 
 local Axiom = {}
 Axiom.__index = Axiom
@@ -294,7 +312,7 @@ end
 
 function Axiom.CreateWindow(opts)
     opts = opts or {}
-    local self = setmetatable({ _rows = 0 }, Axiom)
+    local self = setmetatable({ _rows = 0, _tabs = {}, _activeTab = nil }, Axiom)
     local gui = inst("ScreenGui", nil, { Name = "AxiomUI", ResetOnSpawn = false,
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100000 })
     local holder = resolveHolder()
@@ -353,45 +371,85 @@ function Axiom.CreateWindow(opts)
         local my = 22 + (i - 1) * 44
         local active = (i == 1)
         local side = self._side
+        -- 每个选项卡拥有独立内容容器（挂在 detail 内，与 detail 同坐标系）
+        local content = inst("Frame", detail, { Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 2,
+            ClipsDescendants = false, Visible = active })
         local bg = inst("Frame", side, { Size = UDim2.fromOffset(160, 34),
             Position = UDim2.fromOffset(8, my - 5), BackgroundColor3 = C.Panel,
             BackgroundTransparency = active and 0.4 or 1, BorderSizePixel = 0, ZIndex = 1 })
         corner(bg, 8)
-        local act = inst("Frame", bg, { Size = UDim2.fromOffset(3, 26),
+        -- 蓝白竖向渐变指示条（蓝 -> 白，Rotation=90 竖向）；初始非激活条长度为 0
+        local act = inst("Frame", bg, { Size = UDim2.fromOffset(3, active and 26 or 0),
             Position = UDim2.fromOffset(2, 4), BackgroundColor3 = C.Accent,
             BackgroundTransparency = active and 0 or 1, BorderSizePixel = 0, ZIndex = 4 })
-        corner(act, 2)
+        corner(act, 2); grad(act, C.Accent, Color3.new(1, 1, 1), 90)
         side.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, my + 40))
         local mi = inst("ImageLabel", side, { Size = UDim2.fromOffset(17, 17),
             Position = UDim2.fromOffset(18, my + 5), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(mi, icon or "home", active and C.Accent or C.Sub)
         local mt = label(side, name or ("Tab " .. i), 13, active and C.Text or C.Sub, active)
         mt.Size = UDim2.fromOffset(120, 24); mt.Position = UDim2.fromOffset(44, my); mt.ZIndex = 3
-        local tab = { _win = self, _name = name, _bg = bg, _act = act, _mi = mi, _mt = mt }
-        function tab:AddToggle(o) return self._win:_row("Toggle", o) end
-        function tab:AddButton(o) return self._win:_row("Button", o) end
-        function tab:AddSlider(o) return self._win:_row("Slider", o) end
-        function tab:AddDropdown(o) return self._win:_row("Dropdown", o) end
-        function tab:AddParagraph(o) return self._win:_row("Paragraph", o) end
-        function tab:AddColorPicker(o) return self._win:_row("ColorPicker", o) end
+        -- 覆盖整行的透明点击热区
+        local hit = inst("TextButton", side, { Size = UDim2.fromOffset(160, 34),
+            Position = UDim2.fromOffset(8, my - 5), BackgroundTransparency = 1,
+            BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 5 })
+        local tab = { _win = self, _name = name, _bg = bg, _act = act, _mi = mi, _mt = mt,
+            _content = content, _rows = 0, _lastY = 92 }
+        connect(hit.MouseButton1Click, function() self:SelectTab(tab) end)
+        self._tabs[#self._tabs + 1] = tab
+        if active then self._activeTab = tab end
+        function tab:AddToggle(o) return self._win:_row("Toggle", o, self) end
+        function tab:AddButton(o) return self._win:_row("Button", o, self) end
+        function tab:AddSlider(o) return self._win:_row("Slider", o, self) end
+        function tab:AddDropdown(o) return self._win:_row("Dropdown", o, self) end
+        function tab:AddParagraph(o) return self._win:_row("Paragraph", o, self) end
+        function tab:AddColorPicker(o) return self._win:_row("ColorPicker", o, self) end
         return tab
     end
 
-    function self:_row(kind, o)
+    function self:SelectTab(tab)
+        if not tab or self._activeTab == tab then return end
+        self._activeTab = tab
+        -- 内容容器显隐 + 滚动高度切到目标 tab
+        for _, t in ipairs(self._tabs) do
+            if t._content then t._content.Visible = (t == tab) end
+        end
+        detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, (tab._lastY or 92) + 60))
+        pcall(function() detail.CanvasPosition = UDim2.fromOffset(0, 0) end)
+        for _, t in ipairs(self._tabs) do
+            local on = (t == tab)
+            -- 指示条：新条渐显并伸长到 26；旧条缩短到 0 并渐隐直到消失
+            tweenProp(t._act, { Size = UDim2.fromOffset(3, on and 26 or 0),
+                BackgroundTransparency = on and 0 or 1 }, on and 0.28 or 0.22)
+            -- 高亮背景 + 图标/文字高亮同步
+            tweenProp(t._bg, { BackgroundTransparency = on and 0.4 or 1 }, 0.22)
+            pcall(function() t._mi.ImageColor3 = on and C.Accent or C.Sub end)
+            t._mt.TextColor3 = on and C.Text or C.Sub
+            t._mt.Font = on and FONT_B or FONT
+        end
+        return tab
+    end
+
+    function self:_row(kind, o, tab)
         o = o or {}
-        self._rows = self._rows + 1
-        local y = 92 + (self._rows - 1) * 52
+        local owner = tab or self._activeTab
+        local host = (owner and owner._content) or detail
+        owner = owner or self
+        owner._rows = (owner._rows or 0) + 1
+        local y = 92 + (owner._rows - 1) * 52
+        owner._lastY = y
         detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, y + 60))
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
         if type(o.Callback) == "function" then obj._cb = o.Callback end
         local iconTop = (kind == "Paragraph") and (y + 21)
             or (((o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")) and (y + 16) or (y + 8))
-        local ci = inst("ImageLabel", detail, { Size = UDim2.fromOffset(16, 16),
+        local ci = inst("ImageLabel", host, { Size = UDim2.fromOffset(16, 16),
             Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
-        local tx = label(detail, o.Title or kind, 13, C.Text, true)
+        local tx = label(host, o.Title or kind, 13, C.Text, true)
         tx.Size = UDim2.fromOffset(210, 20); tx.Position = UDim2.fromOffset(46, y + 6); tx.ZIndex = 3
-        local sub = label(detail, o.Desc or "Axiom setting", 10, C.Sub)
+        local sub = label(host, o.Desc or "Axiom setting", 10, C.Sub)
         sub.Size = UDim2.fromOffset(230, 16); sub.Position = UDim2.fromOffset(46, y + 26); sub.ZIndex = 3
         local rx = W - 176 - 24
         if kind == "Paragraph" then
@@ -401,7 +459,7 @@ function Axiom.CreateWindow(opts)
             function obj:Get() return sub.Text end
         elseif kind == "Toggle" then
             local on = o.Default and true or false
-            local tr = inst("TextButton", detail, { Size = UDim2.fromOffset(44, 24),
+            local tr = inst("TextButton", host, { Size = UDim2.fromOffset(44, 24),
                 Position = UDim2.fromOffset(rx - 44, y + 8), BackgroundColor3 = on and C.Accent or C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
@@ -436,7 +494,7 @@ function Axiom.CreateWindow(opts)
             function obj:SetValue(v) on = v and true or false; obj.Value = on; refresh() end
             function obj:Get() return on end
         elseif kind == "Button" then
-            local b = inst("TextButton", detail, { Size = UDim2.fromOffset(96, 28),
+            local b = inst("TextButton", host, { Size = UDim2.fromOffset(96, 28),
                 Position = UDim2.fromOffset(rx - 96, y + 6), BackgroundColor3 = C.Accent,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(b, 7)
@@ -450,7 +508,7 @@ function Axiom.CreateWindow(opts)
         elseif kind == "Slider" then
             local minN, maxN = o.Min or 0, o.Max or 100
             local val = o.Default or minN
-            local tr = inst("TextButton", detail, { Size = UDim2.fromOffset(130, 6),
+            local tr = inst("TextButton", host, { Size = UDim2.fromOffset(130, 6),
                 Position = UDim2.fromOffset(rx - 176, y + 19), BackgroundColor3 = C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 3)
@@ -458,7 +516,7 @@ function Axiom.CreateWindow(opts)
             local fl = inst("Frame", tr, { Size = UDim2.fromScale(clamp(pct0, 0.03, 1), 1),
                 BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 4 })
             corner(fl, 3)
-            local vv = label(detail, tostring(math.floor(val)), 12, C.Accent, true, Enum.TextXAlignment.Right)
+            local vv = label(host, tostring(math.floor(val)), 12, C.Accent, true, Enum.TextXAlignment.Right)
             vv.Size = UDim2.fromOffset(38, 20); vv.Position = UDim2.fromOffset(rx - 40, y + 12); vv.ZIndex = 3
             local dragging = false
             local function applyVal(v, fire)
@@ -507,7 +565,7 @@ function Axiom.CreateWindow(opts)
                 if #arr <= 3 then return table.concat(arr, ", ") end
                 return tostring(arr[1]) .. ", " .. tostring(arr[2]) .. ", " .. tostring(arr[3]) .. " +" .. (#arr - 3)
             end
-            local cap = inst("TextButton", detail, { Size = UDim2.fromOffset(140, 28),
+            local cap = inst("TextButton", host, { Size = UDim2.fromOffset(140, 28),
                 Position = UDim2.fromOffset(rx - 140, y + 6), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(cap, 7); stroke(cap, C.Line, 1, 0)
@@ -581,7 +639,7 @@ function Axiom.CreateWindow(opts)
             end
         elseif kind == "ColorPicker" then
             local cur = o.Default or C.Accent
-            local sw = inst("TextButton", detail, { Size = UDim2.fromOffset(42, 24),
+            local sw = inst("TextButton", host, { Size = UDim2.fromOffset(42, 24),
                 Position = UDim2.fromOffset(rx - 42, y + 7), BackgroundColor3 = cur,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(sw, 6); stroke(sw, C.Line, 1, 0)
