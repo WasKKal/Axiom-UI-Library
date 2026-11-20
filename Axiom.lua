@@ -422,6 +422,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local rightW = W - leftW
     local bodyH = H - 34
     self._isLogin = true
+    self._loginLoading = false
 
     local layer = inst("CanvasGroup", main, { Name = "LoginLayer",
         Size = UDim2.fromOffset(W, bodyH), Position = UDim2.fromOffset(0, 34),
@@ -505,13 +506,46 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         tx.Size = UDim2.fromScale(1, 1); tx.ZIndex = 28
         if textGrad then grad(tx, textGrad[1], textGrad[2], textGrad[3] or 90) end
         connect(b.MouseButton1Click, function() if type(cb) == "function" then pcall(cb) end end)
-        return b
+        return b, tx
     end
     local by = 44 + avSize + 12 + 36
-    loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, function()
-        self:_showMainUI()
-        if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
-    end, { C.AccentW, Color3.new(1, 1, 1), 90 })
+    local loadBtn, loadTx = loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, nil,
+        { C.AccentW, Color3.new(1, 1, 1), 90 })
+    -- 加载中：右侧 loader-circle 持续旋转；文字左移一点点；延迟 1.5-2.5s 后进入主界面
+    local spinConn = nil
+    local function stopSpin()
+        if spinConn then pcall(function() spinConn:Disconnect() end); spinConn = nil end
+    end
+    connect(loadBtn.MouseButton1Click, function()
+        if self._loginLoading then return end
+        self._loginLoading = true
+        loadBtn.Active = false
+        -- 文字向左微移
+        tweenProp(loadTx, { Position = UDim2.new(0, -14, 0, 0) }, 0.25)
+        -- 右侧旋转 loader
+        local loader = inst("ImageLabel", loadBtn, { Name = "LoadSpinner",
+            Size = UDim2.fromOffset(18, 18),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Position = UDim2.new(1, -18, 0.5, 0),
+            BackgroundTransparency = 1, ImageTransparency = 1, Rotation = 0, ZIndex = 29 })
+        applyIcon(loader, "loader-circle", Color3.new(1, 1, 1))
+        tweenProp(loader, { ImageTransparency = 0 }, 0.2)
+        local okRs, rs = pcall(function() return game:GetService("RunService") end)
+        if okRs and rs then
+            local okc, conn = pcall(function()
+                return rs.Heartbeat:Connect(function(dt)
+                    pcall(function() loader.Rotation = (loader.Rotation + (dt or 1 / 60) * 360) % 360 end)
+                end)
+            end)
+            if okc then spinConn = conn end
+        end
+        local wait = 1.5 + (math.random(0, 1000) / 1000) * 1.0
+        pcall(task.delay, wait, function()
+            stopSpin()
+            self:_showMainUI()
+            if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
+        end)
+    end)
     loginBtn("UnloadScript", "卸载脚本", by + 52, C.DeepGray1, C.DeepGray2, function()
         if type(opts.OnUnloadScript) == "function" then pcall(opts.OnUnloadScript) end
         self:_closeWindow()
