@@ -158,8 +158,37 @@ end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
+local strokeBase = setmetatable({}, { __mode = "k" })
+local function collectStrokes(root, out)
+    out = out or {}
+    if not root then return out end
+    local function walk(o)
+        if not o then return end
+        local ok, kids = pcall(function() return o:GetChildren() end)
+        if ok and type(kids) == "table" then
+            for _, c in ipairs(kids) do
+                local okCls, cls = pcall(function() return c.ClassName end)
+                if okCls and cls == "UIStroke" then
+                    if strokeBase[c] == nil then
+                        local okT, t = pcall(function() return c.Transparency end)
+                        strokeBase[c] = okT and type(t) == "number" and t or 0
+                    end
+                    out[#out + 1] = c
+                end
+                walk(c)
+            end
+        end
+    end
+    walk(root)
+    return out
+end
+local function targetStrokeTransparency(base, to)
+    local t = clamp(to, 0, 1)
+    return base + (1 - base) * t
+end
 local function fade(cg, to, dur, cb)
     if not cg then return end
+    local strokes = collectStrokes(cg)
     local done = false
     pcall(function()
         local ts = game:GetService("TweenService")
@@ -168,10 +197,19 @@ local function fade(cg, to, dur, cb)
         local tw = ts:Create(cg, ti, { GroupTransparency = to })
         if type(cb) == "function" then tw.Completed:Connect(cb) end
         tw:Play()
+        for _, s in ipairs(strokes) do
+            pcall(function()
+                local stw = ts:Create(s, ti, { Transparency = targetStrokeTransparency(strokeBase[s], to) })
+                stw:Play()
+            end)
+        end
         done = true
     end)
     if not done then
         pcall(function() cg.GroupTransparency = to end)
+        for _, s in ipairs(strokes) do
+            pcall(function() s.Transparency = targetStrokeTransparency(strokeBase[s], to) end)
+        end
         if type(cb) == "function" then pcall(cb) end
     end
 end
@@ -179,6 +217,7 @@ local function fadeAny(o, to, dur, cb)
     if not o then return end
     local isGroup = (o.ClassName == "CanvasGroup")
     local prop = isGroup and "GroupTransparency" or "BackgroundTransparency"
+    local strokes = collectStrokes(o)
     local done = false
     pcall(function()
         local ts = game:GetService("TweenService")
@@ -187,10 +226,19 @@ local function fadeAny(o, to, dur, cb)
         local tw = ts:Create(o, ti, { [prop] = to })
         if type(cb) == "function" then tw.Completed:Connect(cb) end
         tw:Play()
+        for _, s in ipairs(strokes) do
+            pcall(function()
+                local stw = ts:Create(s, ti, { Transparency = targetStrokeTransparency(strokeBase[s], to) })
+                stw:Play()
+            end)
+        end
         done = true
     end)
     if not done then
         pcall(function() o[prop] = to end)
+        for _, s in ipairs(strokes) do
+            pcall(function() s.Transparency = targetStrokeTransparency(strokeBase[s], to) end)
+        end
         if type(cb) == "function" then pcall(cb) end
     end
 end
@@ -549,7 +597,7 @@ function Axiom.CreateWindow(opts)
 
     function self:ShowNotify(o)
         o = o or {}
-        local toast = inst("CanvasGroup", gui, { Size = UDim2.fromOffset(260, 60),
+        local toast = inst("CanvasGroup", main, { Size = UDim2.fromOffset(260, 60),
             Position = UDim2.new(1, -280, 1, -78), BackgroundColor3 = C.Panel,
             BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 20 })
         corner(toast, 10); stroke(toast, C.Accent, 1.5, 0.3)
@@ -569,7 +617,7 @@ function Axiom.CreateWindow(opts)
         return toast
     end
 
-    local confirm = inst("CanvasGroup", gui, { Name = "CloseConfirm", Size = UDim2.fromOffset(300, 168),
+    local confirm = inst("CanvasGroup", main, { Name = "CloseConfirm", Size = UDim2.fromOffset(300, 168),
         Position = UDim2.new(0.5, -150, 0.5, -84), BackgroundColor3 = C.Panel,
         BorderSizePixel = 0, GroupTransparency = 1, Visible = false, ZIndex = 46 })
     corner(confirm, 12); stroke(confirm, C.Line, 1, 0.15); self._confirm = confirm
@@ -594,9 +642,10 @@ function Axiom.CreateWindow(opts)
     end
     local yesBtn = confirmBtn("关闭窗口", 72, Color3.fromRGB(214, 62, 62), Color3.fromRGB(150, 34, 34), true)
     local noBtn = confirmBtn("取消", 120, C.Track, C.Row, false)
-    local shade = inst("TextButton", gui, { Name = "CloseShade", Size = UDim2.fromScale(1, 1),
+    local shade = inst("TextButton", main, { Name = "CloseShade", Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, Text = "", AutoButtonColor = false, Visible = false, ZIndex = 45 })
+    corner(shade, 12)
     self._shade = shade
 
     local function hideConfirm()
@@ -609,11 +658,11 @@ function Axiom.CreateWindow(opts)
         fade(confirm, 0, 0.22)
     end
     function self:_closeWindow()
-        fade(confirm, 1, 0.28, function()
-            confirm.Visible = false
+        fade(confirm, 1, 0.2, function() confirm.Visible = false end)
+        fadeAny(shade, 1, 0.2, function() shade.Visible = false end)
+        fade(main, 1, 0.35, function()
             pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
         end)
-        fadeAny(shade, 1, 0.28, function() shade.Visible = false end)
     end
     connect(noBtn.MouseButton1Click, function() hideConfirm() end)
     connect(yesBtn.MouseButton1Click, function() self:_closeWindow() end)
