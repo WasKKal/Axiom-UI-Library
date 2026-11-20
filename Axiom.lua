@@ -364,7 +364,8 @@ function Axiom.CreateWindow(opts)
 
     -- 内容层：包裹选项卡区与控件区，供黄点最小化时整块渐隐
     local contentLayer = inst("CanvasGroup", main, { Name = "ContentLayer", Size = UDim2.fromOffset(W, H - 34),
-        Position = UDim2.fromOffset(0, 34), GroupTransparency = 0, BorderSizePixel = 0, ZIndex = 2 })
+        Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1,
+        GroupTransparency = 0, BorderSizePixel = 0, ZIndex = 2 })
     self._contentLayer = contentLayer
 
     local side = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(176, H - 34),
@@ -392,12 +393,17 @@ function Axiom.CreateWindow(opts)
     function self:_minimize()
         if self._minimized then return end
         self._minimized = true
+        -- 立即禁用三色点交互（避免淡出过程中误触），Visible 待淡出完成后再关
+        for _, d in ipairs(dotList) do pcall(function() d.Active = false end) end
         -- 内容区 / 选项卡区整块渐隐
-        fade(contentLayer, 1, 0.3, function() contentLayer.Visible = false end)
+        fade(contentLayer, 1, 0.3, function()
+            contentLayer.Visible = false
+            for _, d in ipairs(dotList) do pcall(function() d.Visible = false end) end
+        end)
         -- 三色点渐隐
         for _, d in ipairs(dotList) do fadeAny(d, 1, 0.3) end
-        -- UI 框架向上收起：高度收到仅剩标题栏
-        tweenProp(main, { Size = UDim2.fromOffset(W, 34) }, 0.34)
+        -- UI 框架向上收起：高度收到仅剩标题栏、宽度从右向左收起至标题宽度（不再留长条）
+        tweenProp(main, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
         -- 标题栏从右向左收起，仅剩标题文字区（含右侧 plus 预留位）
         tweenProp(bar, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
         -- 标题文字左移并改左对齐
@@ -421,10 +427,16 @@ function Axiom.CreateWindow(opts)
         -- UI 框架向下展开还原高度（逆向动画）
         tweenProp(main, { Size = UDim2.fromOffset(W, H) }, 0.34, function()
             contentLayer.Visible = true
+            for _, d in ipairs(dotList) do
+                pcall(function() d.Visible = true; d.Active = true end)
+            end
         end, 0.1)
-        -- 内容区 / 三色点渐显还原
+        -- 内容区 / 三色点渐显还原（先恢复可见再渐显，避免隐藏态下渐显不可见）
         fade(contentLayer, 0, 0.3)
-        for _, d in ipairs(dotList) do fadeAny(d, 0, 0.3) end
+        for _, d in ipairs(dotList) do
+            pcall(function() d.Visible = true; d.Active = true end)
+            fadeAny(d, 0, 0.3)
+        end
     end
 
     -- ===== 拖动标题文字移动窗口 =====
