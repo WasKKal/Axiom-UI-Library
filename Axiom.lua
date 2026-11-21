@@ -596,6 +596,36 @@ local function tweenEx(o, goal, dur, style, dir, cb, delay)
         run()
     end
 end
+local function deepFade(root, to, dur, delayT)
+    if not root then return end
+    local function walk(o)
+        local okCls, cls = pcall(function() return o.ClassName end)
+        if not okCls then return end
+        local prop = nil
+        if cls == "TextLabel" or cls == "TextButton" or cls == "TextBox" then
+            prop = "TextTransparency"
+        elseif cls == "ImageLabel" or cls == "ImageButton" then
+            prop = "ImageTransparency"
+        elseif cls == "Frame" then
+            prop = "BackgroundTransparency"
+        elseif cls == "CanvasGroup" then
+            prop = "GroupTransparency"
+        end
+        if prop then tweenProp(o, { [prop] = to }, dur, nil, delayT) end
+        local okKids, kids = pcall(function() return o:GetChildren() end)
+        if okKids and kids then
+            for _, k in ipairs(kids) do
+                local okK, kcls = pcall(function() return k.ClassName end)
+                if okK and kcls == "UIStroke" then
+                    tweenProp(k, { Transparency = to }, dur, nil, delayT)
+                else
+                    walk(k)
+                end
+            end
+        end
+    end
+    walk(root)
+end
 local Axiom = {}
 Axiom.__index = Axiom
 Axiom.GetLucideCacheDir = function() return LUCIDE_CACHE_DIR end
@@ -1269,7 +1299,8 @@ function Axiom.CreateWindow(opts)
     self._mainScale = mainScale
     self._baseScale = SCALE
     self._baseW, self._baseH = W, H
-    corner(main, 12)
+    local mainCorner = corner(main, 12)
+    self._mainCorner = mainCorner
     local mainStroke = stroke(main, C.Border, 1.5, 1)  
     if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
     self.main = main
@@ -2022,12 +2053,148 @@ function Axiom.CreateWindow(opts)
         tweenShadeAlpha(shade, 0.35, 0.3)
         fade(confirm, 0, 0.22)
     end
+    local closing = false
     function self:_closeWindow()
+        if closing then return end
+        closing = true
         fade(confirm, 1, 0.2, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
-        fade(main, 1, 0.35, function()
-            pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
+        if type(self._stopExitHint) == "function" then self._stopExitHint() end
+        local function later(t, fn)
+            if type(task) == "table" and type(task.delay) == "function" then
+                pcall(task.delay, t, fn)
+            else
+                fn()
+            end
+        end
+        local rows = {}
+        local function grab(cont, dir)
+            if not cont then return end
+            local ok, kids = pcall(function() return cont:GetChildren() end)
+            if not ok or type(kids) ~= "table" then return end
+            for _, c in ipairs(kids) do
+                local okCls, cls = pcall(function() return c.ClassName end)
+                if okCls and (cls == "Frame" or cls == "TextButton" or cls == "ImageButton"
+                    or cls == "TextLabel" or cls == "ImageLabel" or cls == "CanvasGroup"
+                    or cls == "ScrollingFrame") then
+                    rows[#rows + 1] = { obj = c, dir = dir }
+                end
+            end
+        end
+        grab(detail, 1)
+        grab(side, -1)
+        for i = 1, #rows do
+            local r = rows[i]
+            local okP, p = pcall(function() return r.obj.Position end)
+            local stagger = (#rows - i) * 0.025
+            if okP and p and p.X and p.Y then
+                local target = UDim2.new(p.X.Scale, p.X.Offset + r.dir * 140, p.Y.Scale, p.Y.Offset)
+                tweenProp(r.obj, { Position = target }, 0.42, nil, stagger)
+            end
+            deepFade(r.obj, 1, 0.38, stagger)
+        end
+        deepFade(bt, 1, 0.3)
+        for _, d in ipairs(dotList) do deepFade(d, 1, 0.3) end
+        if hintIcon then deepFade(hintIcon, 1, 0.2) end
+        if hintText then deepFade(hintText, 1, 0.2) end
+        local containerFadeDelay = 0.06 + #rows * 0.025
+        later(containerFadeDelay, function()
+            local kids = nil
+            pcall(function() kids = main:GetChildren() end)
+            if kids then
+                for _, c in ipairs(kids) do
+                    local okCls, cls = pcall(function() return c.ClassName end)
+                    if okCls and (cls == "Frame" or cls == "ScrollingFrame" or cls == "CanvasGroup") then
+                        deepFade(c, 1, 0.24)
+                    end
+                end
+            end
+            for _, d in ipairs(dotList) do pcall(function() d.Visible = false end) end
         end)
+        local fx = inst("CanvasGroup", gui, { Name = "CloseFx", Size = UDim2.fromScale(1, 1),
+            Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+            GroupTransparency = 0, BorderSizePixel = 0, Visible = false, ZIndex = 200 })
+        local centerIcon = inst("ImageLabel", fx, { Name = "ThanksIcon",
+            Size = UDim2.fromOffset(72, 72), Position = UDim2.new(0.5, 0, 0.5, -34),
+            AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
+            ImageTransparency = 1, ZIndex = 202 })
+        applyIcon(centerIcon, "handshake", C.Accent)
+        local thanksText = label(fx, "感谢使用", 20, C.Text, true, Enum.TextXAlignment.Center)
+        thanksText.Name = "ThanksText"
+        thanksText.Size = UDim2.fromOffset(240, 30)
+        thanksText.Position = UDim2.new(0.5, 0, 0.5, 28)
+        thanksText.AnchorPoint = Vector2.new(0.5, 0.5)
+        thanksText.TextTransparency = 1
+        thanksText.ZIndex = 202
+        local function stageThanks()
+            fx.Visible = true
+            tweenProp(centerIcon, { ImageTransparency = 0 }, 0.4)
+            tweenProp(thanksText, { TextTransparency = 0 }, 0.4)
+        end
+        local function stageCollapse()
+            local d = 150
+            local okSc, sc = pcall(function() return self._mainScale.Scale end)
+            sc = okSc and sc or SCALE
+            local half = (d * sc) / 2
+            tweenProp(main, { Size = UDim2.fromOffset(d, d),
+                Position = UDim2.new(0.5, -half, 0.5, -half) }, 0.7)
+            if mainCorner then
+                tweenProp(mainCorner, { CornerRadius = UDim.new(0, d / 2) }, 0.7)
+            end
+            tweenProp(centerIcon, { Size = UDim2.fromOffset(40, 40),
+                Position = UDim2.new(0.5, 0, 0.5, -20) }, 0.7)
+            tweenProp(thanksText, { Position = UDim2.new(0.5, 0, 0.5, 16) }, 0.7)
+        end
+        local function stageVanish()
+            fade(main, 1, 0.5)
+            if self._mainScale then
+                tweenProp(self._mainScale, { Scale = 0.02 }, 0.5)
+            end
+            tweenProp(centerIcon, { ImageTransparency = 1, Size = UDim2.fromOffset(10, 10) }, 0.5)
+            tweenProp(thanksText, { TextTransparency = 1 }, 0.4)
+        end
+        local function stageParticles()
+            local parts = {}
+            local N = 20
+            local palette = { C.Accent, C.AccentW, C.Accent2, Color3.new(1, 1, 1) }
+            for i = 1, N do
+                local p = inst("Frame", fx, { Name = "Particle",
+                    Size = UDim2.fromOffset(9, 9), Position = UDim2.new(0.5, 0, 0.5, 0),
+                    AnchorPoint = Vector2.new(0.5, 0.5),
+                    BackgroundColor3 = palette[(i % #palette) + 1],
+                    BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 204 })
+                corner(p, 5)
+                parts[#parts + 1] = p
+            end
+            local R1, R2 = 190, 2400
+            for i, p in ipairs(parts) do
+                local ang = (i / N) * math.pi * 2
+                local dx, dy = math.cos(ang), math.sin(ang)
+                local deg = i * (360 / N)
+                local p1 = UDim2.new(0.5, dx * R1, 0.5, dy * R1)
+                local p2 = UDim2.new(0.5, dx * R2, 0.5, dy * R2)
+                local d1 = (i % 5) * 0.015
+                later(d1, function()
+                    tweenProp(p, { Position = p1, BackgroundTransparency = 0 }, 0.32)
+                end)
+                later(0.34 + d1, function()
+                    pcall(function() p.Rotation = deg end)
+                    tweenProp(p, { Position = p2, Size = UDim2.fromOffset(2, 340),
+                        BackgroundTransparency = 1 }, 0.75, function()
+                        pcall(function() if p.Parent then p:Destroy() end end)
+                    end)
+                end)
+            end
+            later(1.3, function()
+                pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
+            end)
+        end
+        local t0 = containerFadeDelay + 0.28
+        later(t0, stageThanks)
+        later(t0 + 1.5, function() tweenProp(thanksText, { TextTransparency = 1 }, 0.5) end)
+        later(t0 + 2.05, stageCollapse)
+        later(t0 + 2.8, stageVanish)
+        later(t0 + 3.35, stageParticles)
     end
     connect(noBtn.MouseButton1Click, function() hideConfirm() end)
     connect(yesBtn.MouseButton1Click, function() self:_closeWindow() end)
