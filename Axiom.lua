@@ -585,13 +585,52 @@ local C = {
 }
 local FONT = Enum.Font.SourceSans
 local FONT_B = Enum.Font.GothamBold
+local FONT_FACE, FONT_FACE_B, USE_FONT_FACE = nil, nil, false
+pcall(function()
+    local FC = Font
+    if type(FC) ~= "table" then return end
+    local fam = "rbxasset://fonts/families/SourceSansPro.json"
+    local WR, WB, NS
+    pcall(function() WR = Enum.FontWeight.Regular end)
+    pcall(function() WB = Enum.FontWeight.Bold end)
+    pcall(function() NS = Enum.FontStyle.Normal end)
+    local function mkFont(weight, enumFallback)
+        local ok, f
+        if weight then
+            ok, f = pcall(FC.new, fam, weight, NS)
+            if ok and f then return f end
+            ok, f = pcall(FC.new, fam, weight)
+            if ok and f then return f end
+        end
+        if type(FC.fromEnum) == "function" then
+            ok, f = pcall(FC.fromEnum, enumFallback)
+            if ok and f then return f end
+        end
+        ok, f = pcall(FC.new, fam)
+        if ok and f then return f end
+        return nil
+    end
+    local r = mkFont(WR, Enum.Font.SourceSans)
+    local b = mkFont(WB, Enum.Font.GothamBold)
+    if r and b then
+        FONT_FACE, FONT_FACE_B, USE_FONT_FACE = r, b, true
+    end
+end)
+local TEXT_CLASSES = { TextLabel = true, TextButton = true, TextBox = true }
 inst = function(cls, parent, props)
     local okNew, o = pcall(Instance.new, cls)
     if not okNew or not o then return nil end
     if props then
+        if USE_FONT_FACE and TEXT_CLASSES[cls] then
+            local req = props.Font
+            props.FontFace = (req == FONT_B) and FONT_FACE_B or FONT_FACE
+            props.Font = nil
+        end
         for k, v in pairs(props) do
             pcall(function() o[k] = v end)
         end
+    elseif USE_FONT_FACE and TEXT_CLASSES[cls] then
+        pcall(function() o.FontFace = FONT_FACE end)
     end
     if parent then pcall(function() o.Parent = parent end) end
     return o
@@ -1467,7 +1506,11 @@ function Axiom.CreateWindow(opts)
             tweenProp(t._bg, { BackgroundTransparency = on and 0.4 or 1 }, 0.22)
             pcall(function() t._mi.ImageColor3 = on and C.Accent or C.Sub end)
             t._mt.TextColor3 = on and C.Text or C.Sub
-            t._mt.Font = on and FONT_B or FONT
+            if USE_FONT_FACE then
+                pcall(function() t._mt.FontFace = on and FONT_FACE_B or FONT_FACE end)
+            else
+                t._mt.Font = on and FONT_B or FONT
+            end
         end
         return tab
     end
