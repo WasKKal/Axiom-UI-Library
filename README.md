@@ -18,6 +18,7 @@
 - 🧩 **完整控件**：开关、滑块、多选下拉、HSV 取色器、按钮、文本段落等，统一回调与 getter 接口；按钮带按压缩放与压暗反馈，下拉点空白自动收起。
 - 🔔 **全局通知**：右上角堆叠通知，左边缘蓝白渐变条贴齐边框，圆角裁剪，支持多种类型着色。
 - 🛡️ **输入隔离**：窗口区域透明拦截层吸收空白处点击 / 触摸，防止穿透到 Roblox；窗口外区域不拦截，允许正常点击 / 触摸。
+- 💾 **Config 系统**：控件 `ConfigKey` 绑定 + 命名配置存取（保存 / 载入 / 删除 / 重命名 / 列表），落盘到 `Axiom/<Folder>/`。
 - 🔐 **登录启动页**：可选启动页，头像 / 用户名 / 加载按钮居中，加载动画结束后切入主界面。
 - 🖼️ **图标缓存**：Lucide v6 图标首次加载后缓存到本地，后续启动优先读取本地，无需重复联网。
 - 🔌 **零依赖单文件**：`Axiom.lua` 独立引入，兼容主流 Roblox 执行环境与 Roblox Studio。
@@ -43,8 +44,10 @@ local Axiom = loadstring(game:HttpGet(
 
 local Win = Axiom.CreateWindow({
     Title = "AXIOM",
+    Folder = "MyHub",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
 })
+Win:SaveConfig("Preset1")
 
 local Tab = Win:AddTab("General", "settings")
 Tab:AddToggle({ Title = "Master Switch", Default = true, Callback = function(v) print(v) end })
@@ -59,7 +62,7 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 
 | 接口 | 说明 |
 | --- | --- |
-| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript` |
+| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Folder`（资源/配置目录名）、`ConfigName`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript` |
 | `Window:AddTab(name, icon)` | 添加选项卡，返回 `Tab` |
 | `Window:AddLoginParagraph(o)` | 启动页添加整行段落 |
 | `Window:ShowNotify(o)` | 窗口内右下角简易通知 |
@@ -79,7 +82,21 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 | `AddButton(o)` | 按钮 |
 | `AddParagraph(o)` | 文本段落 |
 
-控件对象统一提供 `SetValue` / `Set` / `Get` / `Callback` 等方法，下拉另含 `Select` / `ClearSelection` / `IsSelected`。
+控件对象统一提供 `SetValue` / `Set` / `Get` / `Callback` 等方法，下拉另含 `Select` / `ClearSelection` / `IsSelected`。给控件传 `o.ConfigKey = "xxx"` 即纳入配置管理（Toggle / Slider / Dropdown / ColorPicker）。
+
+### Config（Window 方法）
+
+| 方法 | 说明 |
+| --- | --- |
+| `Win:SaveConfig(name)` | 保存当前所有 `ConfigKey` 控件值为命名配置（省略 `name` 存到 Default） |
+| `Win:LoadConfig(name)` | 载入配置回填控件（省略 `name` 读 active 记录） |
+| `Win:GetConfigs()` | 列出所有配置名 |
+| `Win:ConfigExists(name)` | 配置是否存在 |
+| `Win:SetConfig(name)` / `GetConfigName()` / `GetConfigPath()` | 切换 / 查询当前配置 |
+| `Win:DeleteConfig(name)` / `RenameConfig(old, new)` | 删除 / 重命名（Default 不可删） |
+| `Win:GetAssetDir()` / `GetConfigDir()` | 资源 / 配置落盘目录，形如 `Axiom/<Folder>/` |
+
+背景图下载到 `Axiom/<Folder>/` 并按 URL 编码命名；下次使用命中本地缓存不再下载，更换 `Background` URL 时自动删除旧图。
 
 ## 🎯 设计理念
 
