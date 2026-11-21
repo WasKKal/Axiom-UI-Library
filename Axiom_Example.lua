@@ -30,6 +30,23 @@ local Win = Axiom.CreateWindow({
     LoginInfo = true,
     LoginTitle = "版本更新日志",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
+    -- KeySystem 演示：输入框占位文字可改；点击左侧 user-key 图标可自定义行为（这里演示读取剪贴板粘贴）。
+    -- 正式使用时把 KeyCheck 换成自己的后端接口，或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }。
+    KeySystem = true,
+    KeyPlaceholder = "输入 AXIOM-DEMO 解锁",
+    KeyDefault = "",
+    OnKeyIconClick = function(win, input)
+        local txt = nil
+        pcall(function() txt = getclipboard() end)
+        if type(txt) == "string" and txt ~= "" then input.Text = txt end
+    end,
+    KeyCheck = function(key, resolve)
+        if string.upper(key) == "AXIOM-DEMO" then
+            resolve(true, "验证成功", { plan = "demo" })
+        else
+            resolve(false, "密钥无效，请输入 AXIOM-DEMO")
+        end
+    end,
     OnLoadScript = function() print("load script -> main UI") end,
 })
 
