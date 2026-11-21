@@ -120,7 +120,9 @@ Win:AddLoginParagraph({
     Text = "修复最小化后功能区发白、收起残留长条、隐藏圆点仍可交互等问题；边框加深，控件标题与描述排版更紧凑。",
 })
 
--- ===== Notify 演示：照抄 WasUI-Pro 风格——右上角堆叠、固定 250x30 紧凑框架、左边缘蓝白渐变条、滑入/上移补位/滑出动画 =====
+-- ===== Notify 演示：右上角堆叠、固定 250x30 紧凑框架、左边缘指示条按主色自适应(蓝/绿/黄/红白)、滑入/上移补位/滑出动画 =====
 Axiom.Notify({ Title = "系统就绪", Text = "Axiom UI Library 已加载，图标缓存于 lucide-icon-latest/", Type = "info", Duration = 5 })
 Axiom.Notify({ Title = "多选下拉", Text = "支持多选、限高滚动与触摸防穿透。", Type = "success", Duration = 6 })
 Axiom.Notify({ Title = "提示", Text = "右上角堆叠，到期后其余通知自动上移补位。", Type = "warning", Duration = 7 })
+Axiom.Notify({ Title = "错误", Text = "指示条随主色自适应：红边框即红白指示条。", Type = "error", Duration = 8 })
+Axiom.Notify({ Title = "自定义颜色", Text = "传入 Color 可指定主色，指示条与边框同步。", Color = Color3.fromRGB(200, 30, 180), Duration = 9 })
