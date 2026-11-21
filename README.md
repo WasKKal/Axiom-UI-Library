@@ -85,7 +85,8 @@ local Win = Axiom.CreateWindow({
     KeyIcon = "user-key",
     KeyDefault = "",
     OnKeyIconClick = function(win, input, field)
-        print("点击了卡密图标")
+        pcall(function() setclipboard(tostring(input.Text or "")) end)
+        Axiom.Notify({ Title = "卡密", Text = "卡密已复制到剪贴板", Type = "success", Duration = 2.5 })
     end,
     KeyCheck = function(key, resolve)
         if key == "MY-KEY" then
@@ -97,7 +98,7 @@ local Win = Axiom.CreateWindow({
 })
 ```
 
-`resolve(ok, message, data)` 可同步或异步调用，20 秒未回调判定为超时；`data` 通过 `Win:GetKeyData()` 取回。
+`resolve(ok, message, data)` 可同步或异步调用，20 秒未回调判定为超时；`data` 通过 `Win:GetKeyData()` 取回。校验失败时输入框抖动、按钮转红并显示原因，0.8 秒后自动恢复，期间重新输入会立即解除红色态。
 
 **自定义 HTTP 接口**
 
