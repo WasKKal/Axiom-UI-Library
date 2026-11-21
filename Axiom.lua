@@ -28,6 +28,136 @@ local function hasFs()
     return type(isfile) == "function" and type(readfile) == "function"
         and type(writefile) == "function" and type(makefolder) == "function"
 end
+
+-- ===== Config 系统（后端 API，照抄 AsLab 的落盘/编码约定）=====
+local inst
+local HttpService = pcall(function() return game:GetService("HttpService") end) and game:GetService("HttpService") or nil
+local jsonEncodeValue, jsonDecodeRaw
+do
+    -- 探测两套调用约定（真机方法式 HttpService:JSONEncode vs 无头环境函数式 JSONEncode(v)）
+    local function tryEncode(v)
+        if not HttpService then return nil end
+        local ok, r = pcall(function() return HttpService:JSONEncode(v) end)
+        if ok and type(r) == "string" and r:find("axiom_probe", 1, true) then
+            return function(x) return HttpService:JSONEncode(x) end
+        end
+        local ok2, r2 = pcall(function() return HttpService.JSONEncode(v) end)
+        if ok2 and type(r2) == "string" and r2:find("axiom_probe", 1, true) then
+            return function(x) return HttpService.JSONEncode(x) end
+        end
+        return nil
+    end
+    jsonEncodeValue = tryEncode("__axiom_probe__") or function() return nil end
+    local function tryDecode(s)
+        if not HttpService then return nil end
+        local ok, d = pcall(function() return HttpService:JSONDecode(s) end)
+        if ok and type(d) == "table" and d.__axiom_probe__ == 1 then
+            return function(x) return HttpService:JSONDecode(x) end
+        end
+        local ok2, d2 = pcall(function() return HttpService.JSONDecode(s) end)
+        if ok2 and type(d2) == "table" and d2.__axiom_probe__ == 1 then
+            return function(x) return HttpService.JSONDecode(x) end
+        end
+        return nil
+    end
+    jsonDecodeRaw = tryDecode('{"__axiom_probe__":1}') or function() return nil end
+end
+local DEFAULT_CONFIG = "Default"
+local CONFIG_DIR_NAME = "Configs"
+local ROOT_FOLDER = "Axiom"
+local function sanitizeName(name)
+    if name == nil then return nil end
+    local raw = tostring(name):gsub("^%s+", ""):gsub("%s+$", "")
+    if raw == "" then return nil end
+    raw = raw:gsub("[\\/:*?\"<>|]", "_")
+    if #raw > 40 then raw = raw:sub(1, 40) end
+    return raw
+end
+local function cfgToJSON(v)
+    if type(v) == "userdata" then
+        local okR, r = pcall(function() return v.R end)
+        if okR and r ~= nil then
+            local okG, g = pcall(function() return v.G end)
+            local okB, b = pcall(function() return v.B end)
+            if okG and okB then return { __axiom_color3 = { r = r, g = g, b = b } } end
+        end
+    end
+    return v
+end
+local function jsonToCfg(v)
+    if type(v) == "table" and type(v.__axiom_color3) == "table" then
+        local c = v.__axiom_color3
+        return Color3.new(tonumber(c.r) or 0, tonumber(c.g) or 0, tonumber(c.b) or 0)
+    end
+    return v
+end
+local function fileExists(path)
+    if type(path) ~= "string" or type(isfile) ~= "function" then return false end
+    local ok, ex = pcall(isfile, path)
+    return ok and ex == true
+end
+local function ensureFolder(path)
+    if not path or not hasFs() then return end
+    pcall(function()
+        if type(isfolder) == "function" then
+            local ok, ex = pcall(isfolder, path)
+            if ok and not ex then pcall(makefolder, path) end
+        else
+            pcall(makefolder, path)
+        end
+    end)
+end
+local function resolveConfigPath(win, name)
+    if not (win and win._assetDir) then return nil, nil end
+    local n = sanitizeName(name) or win._configName or DEFAULT_CONFIG
+    if n == DEFAULT_CONFIG then return win._assetDir .. "/config.json", DEFAULT_CONFIG end
+    local dir = win._configDir or (win._assetDir .. "/" .. CONFIG_DIR_NAME)
+    return dir .. "/" .. n .. ".json", n
+end
+local function makeConfigValue(win, key, kind)
+    local folder = win and win._configFolder
+    if not (folder and key and key ~= "") then return nil end
+    local v
+    if kind == "Toggle" then v = inst("BoolValue", folder, { Name = key })
+    elseif kind == "Slider" then v = inst("NumberValue", folder, { Name = key })
+    elseif kind == "ColorPicker" then v = inst("Color3Value", folder, { Name = key })
+    else v = inst("StringValue", folder, { Name = key }) end
+    return v
+end
+local function syncConfigValue(ctrl)
+    local v = ctrl and ctrl._configValue
+    if not v then return end
+    local value = ctrl._configCurrent
+    pcall(function()
+        if v:IsA("BoolValue") then v.Value = not not value
+        elseif v:IsA("NumberValue") then v.Value = tonumber(value) or 0
+        elseif v:IsA("Color3Value") then v.Value = value
+        elseif v:IsA("StringValue") then
+            if type(value) == "table" then
+                local ok, enc = pcall(function() return jsonEncodeValue(value) end)
+                v.Value = (ok and type(enc) == "string") and enc or ""
+            else v.Value = tostring(value or "") end
+        end
+    end)
+end
+-- 控件注册 ConfigKey：挂上取值器与 Set 别名，保存时实时从控件读当前值
+local function registerConfig(win, obj, o, kind)
+    local key = o and o.ConfigKey
+    if type(key) ~= "string" or key == "" then return end
+    obj._configKey = key
+    obj._configKind = kind
+    obj._configGet = function()
+        local ok, val = pcall(function() return obj.Get and obj:Get() end)
+        if ok and val ~= nil then return val end
+        return obj.Value
+    end
+    if type(obj.Set) ~= "function" and type(obj.SetValue) == "function" then obj.Set = obj.SetValue end
+    win._config = win._config or {}
+    win._config[key] = obj
+    obj._configValue = makeConfigValue(win, key, kind)
+    obj._configCurrent = obj._configGet()
+    syncConfigValue(obj)
+end
 local function moduleFromContent(content)
     if type(content) ~= "string" or #content < 5000 then return nil end
     local ok, fn = pcall(loadstring, content)
@@ -70,32 +200,84 @@ local function loadLucide()
     if mod then LucideModule = mod; LucideSource = "network" end
     return mod
 end
--- ===== 背景图资源加载：http(s) 优先缓存为本地文件 + getcustomasset，失败回退原始 URL =====
+-- ===== 背景图资源加载：下载到 Folder 对应目录，按 URL 编码命名，命中本地则不再下载，换 URL 自动清理旧图 =====
 local ImageCache = {}
-local function resolveImage(src)
+-- URL 编码为安全 png 文件名（保留可读前缀 + 短哈希保证唯一，避免非法字符/长度问题）
+local function urlToPngName(url)
+    local prefix = tostring(url):match("([^/]+)$") or "bg"
+    prefix = prefix:gsub("%.[%w]+$", "")  -- 去原扩展名
+    prefix = prefix:gsub("[^%w%-_]+", "_")
+    if #prefix > 40 then prefix = prefix:sub(1, 40) end
+    if prefix == "" then prefix = "bg" end
+    local h = 0
+    for i = 1, #tostring(url) do h = (h * 31 + tostring(url):byte(i)) % 1000000007 end
+    return prefix .. "_" .. string.format("%08x", h) .. ".png"
+end
+-- 读取/写入某目录记录的当前背景文件名清单，用于换 URL 时删除旧图
+local function bgStatePath(dir) return dir .. "/bg_state.json" end
+local function readBgState(dir)
+    local state = {}
+    pcall(function()
+        local p = bgStatePath(dir)
+        if fileExists(p) then
+            local raw = readfile(p)
+            local ok, d = pcall(function() return jsonDecodeRaw(raw) end)
+            if ok and type(d) == "table" then state = d end
+        end
+    end)
+    return state
+end
+local function writeBgState(dir, state)
+    pcall(function()
+        ensureFolder(dir)
+        local ok, enc = pcall(function() return jsonEncodeValue(state) end)
+        if ok and type(enc) == "string" then writefile(bgStatePath(dir), enc) end
+    end)
+end
+-- assetDir：由 CreateWindow 的 Folder 决定；旧图清理按该目录记录
+local function resolveImage(src, assetDir)
     if type(src) ~= "string" or #src == 0 then return nil end
-    if ImageCache[src] ~= nil then return ImageCache[src] or nil end
+    local cacheKey = tostring(assetDir or "") .. "|" .. src
+    if ImageCache[cacheKey] ~= nil then return ImageCache[cacheKey] or nil end
     local result = nil
     pcall(function()
         if src:match("^rbxasset") or src:match("^%a[%w+.-]*://") == nil then
             result = src
         else
-            local content = httpGet(src)
-            if type(content) == "string" and #content > 100 then
-                if hasFs() and type(getcustomasset) == "function" then
-                    local name = "axiom_bg_" .. tostring(#src % 100000) .. ".png"
-                    pcall(writefile, name, content)
-                    local okA, asset = pcall(getcustomasset, name)
-                    if okA and type(asset) == "string" and #asset > 0 then
-                        result = asset
+            local dir = assetDir or ROOT_FOLDER .. "/Default"
+            ensureFolder(dir)
+            local pngName = urlToPngName(src)
+            local localPath = dir .. "/" .. pngName
+            if hasFs() and type(getcustomasset) == "function" then
+                -- 命中本地缓存：直接使用，不再下载
+                if not fileExists(localPath) then
+                    local content = httpGet(src)
+                    if type(content) == "string" and #content > 100 then
+                        pcall(writefile, localPath, content)
                     end
                 end
+                if fileExists(localPath) then
+                    local okA, asset = pcall(getcustomasset, localPath)
+                    if okA and type(asset) == "string" and #asset > 0 then result = asset end
+                end
+                -- 换 URL：删除该目录记录的旧背景图（保留当前）
+                local state = readBgState(dir)
+                local old = state.file
+                if type(old) == "string" and old ~= "" and old ~= pngName then
+                    local oldPath = dir .. "/" .. old
+                    if fileExists(oldPath) and type(delfile) == "function" then
+                        pcall(function() delfile(oldPath) end)
+                    end
+                end
+                state.file = pngName
+                state.url = src
+                writeBgState(dir, state)
             end
             if not result then result = src end
         end
     end)
     if result == nil then result = src end
-    ImageCache[src] = result
+    ImageCache[cacheKey] = result
     return result
 end
 local function markSource()
@@ -456,7 +638,7 @@ local C = {
 }
 local FONT = Enum.Font.SourceSans
 local FONT_B = Enum.Font.GothamBold
-local function inst(cls, parent, props)
+inst = function(cls, parent, props)
     local okNew, o = pcall(Instance.new, cls)
     if not okNew or not o then return nil end
     -- 逐属性 pcall：真实执行器的类可能缺少某些属性(如 ScrollingFrame.HorizontalScrollBarEnabled)，
@@ -788,6 +970,26 @@ function Axiom.CreateWindow(opts)
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
+    -- Folder 签名：决定资源与配置落盘目录 Axiom/<Folder>/
+    local subFolder = sanitizeName(opts.Folder) or "Default"
+    local assetDir = ROOT_FOLDER .. "/" .. subFolder
+    local configDir = assetDir .. "/" .. CONFIG_DIR_NAME
+    self._folderName = subFolder
+    self._assetDir = assetDir
+    self._configDir = configDir
+    self._configName = sanitizeName(opts.ConfigName) or DEFAULT_CONFIG
+    self._configPath = (self._configName == DEFAULT_CONFIG)
+        and (assetDir .. "/config.json")
+        or (configDir .. "/" .. self._configName .. ".json")
+    self._config = {}
+    -- 磁盘目录 + Roblox Folder 层级（config 值实例挂在 Config 子 Folder 下）
+    ensureFolder(ROOT_FOLDER); ensureFolder(assetDir); ensureFolder(configDir)
+    local rootFolder = inst("Folder", holder, { Name = ROOT_FOLDER })
+    local subFolderObj = inst("Folder", rootFolder, { Name = subFolder })
+    local configFolder = inst("Folder", subFolderObj, { Name = "Config" })
+    self._rootFolder = rootFolder
+    self._folder = subFolderObj
+    self._configFolder = configFolder
     local W, H = 620, 440
     local SCALE = 0.65
     local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
@@ -847,7 +1049,7 @@ function Axiom.CreateWindow(opts)
     local bgSrc = opts.Background
     local hasBg = type(bgSrc) == "string" and #bgSrc > 0
     if hasBg then
-        local asset = resolveImage(bgSrc)
+        local asset = resolveImage(bgSrc, assetDir)
         local wallpaper = inst("ImageLabel", contentLayer, { Name = "Wallpaper",
             Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
             Image = asset or "", ScaleType = Enum.ScaleType.Crop,
@@ -1095,6 +1297,7 @@ function Axiom.CreateWindow(opts)
             end)
             function obj:SetValue(v) on = v and true or false; obj.Value = on; refresh() end
             function obj:Get() return on end
+            registerConfig(self, obj, o, "Toggle")
         elseif kind == "Button" then
             local b = inst("TextButton", host, { Size = UDim2.fromOffset(96, 28),
                 Position = UDim2.fromOffset(rx - 96, y + 6), BackgroundColor3 = C.Accent,
@@ -1159,6 +1362,7 @@ function Axiom.CreateWindow(opts)
             connect(tr.InputEnded, function() dragging = false end)
             function obj:SetValue(v) applyVal(v, false) end
             function obj:Get() return val end
+            registerConfig(self, obj, o, "Slider")
         elseif kind == "Dropdown" then
             local options = o.Options or {}
             local multi = o.Multi and true or false
@@ -1288,6 +1492,7 @@ function Axiom.CreateWindow(opts)
             function obj:ClearSelection()
                 selected = {}; refreshChecks(); cur.Text = display(); obj.Value = multi and {} or nil
             end
+            registerConfig(self, obj, o, "Dropdown")
         elseif kind == "ColorPicker" then
             -- 照抄 AsLab 的完整 HSV 取色器：SV 面板 + 色相条 + 预览 + HEX + 独占拖动会话
             local def = isColor3(o.Default) and o.Default or Color3.fromRGB(255, 96, 96)
@@ -1470,6 +1675,7 @@ function Axiom.CreateWindow(opts)
             end
             obj.SetValue = obj.Set
             function obj:Get() return hsvToColor(h, sat, val) end
+            registerConfig(self, obj, o, "ColorPicker")
         end
         function obj:Callback(fn) obj._cb = fn; return obj end
         return obj
@@ -1624,7 +1830,7 @@ function Axiom.CreateWindow(opts)
     local function preload()
         pcall(function() loadLucide() end)
         if self._wallpaper then
-            local asset = resolveImage(bgSrc)
+            local asset = resolveImage(bgSrc, assetDir)
             pcall(function() self._wallpaper.Image = asset or "" end)
             -- 等壁纸真正加载完成后才入场（避免边框先于壁纸出现）
             local cpOk, cp = pcall(function() return game:GetService("ContentProvider") end)
@@ -1658,4 +1864,126 @@ function Axiom.CreateWindow(opts)
     end
     return self
 end
+
+-- ===== Config 后端 API（挂在 Window 实例上，照抄 AsLab 的 Save/Load/Delete/Rename/List 行为）=====
+local function listConfigFiles(win)
+    local out, seen = {}, {}
+    local dir = win._configDir or (win._assetDir and (win._assetDir .. "/" .. CONFIG_DIR_NAME))
+    if dir and type(listfiles) == "function" then
+        pcall(function()
+            if type(isfolder) == "function" and not isfolder(dir) then return end
+            local files = listfiles(dir)
+            if type(files) ~= "table" then return end
+            for _, f in ipairs(files) do
+                local base = tostring(f):match("([^/\\]+)%.json$")
+                if base and base ~= "" and not seen[base] then seen[base] = true; out[#out + 1] = base end
+            end
+        end)
+    end
+    table.sort(out, function(a, b) return a:lower() < b:lower() end)
+    return out
+end
+function Axiom:SaveConfig(name)
+    local path, resolved = resolveConfigPath(self, name)
+    if path then self._configPath = path; self._configName = resolved end
+    if not path then path = self._configPath end
+    for _, ctrl in pairs(self._config or {}) do
+        if ctrl then
+            local ok, val = pcall(function() return ctrl._configGet and ctrl._configGet() or ctrl.Value end)
+            ctrl._configCurrent = ok and val or ctrl.Value
+            syncConfigValue(ctrl)
+        end
+    end
+    if path then
+        pcall(function()
+            local data = {}
+            for key, ctrl in pairs(self._config or {}) do
+                if ctrl and ctrl._configCurrent ~= nil then data[key] = cfgToJSON(ctrl._configCurrent) end
+            end
+            writefile(path, jsonEncodeValue(data))
+            if self._assetDir then
+                writefile(self._assetDir .. "/active.json", jsonEncodeValue({ name = self._configName or DEFAULT_CONFIG }))
+            end
+        end)
+    end
+    return self
+end
+function Axiom:_autoSave() return self end
+function Axiom:LoadConfig(name)
+    if name == nil and self._assetDir then
+        local active
+        pcall(function()
+            local ap = self._assetDir .. "/active.json"
+            if fileExists(ap) then
+                local ok, d = pcall(function() return jsonDecodeRaw(readfile(ap)) end)
+                if ok and type(d) == "table" and type(d.name) == "string" and d.name ~= "" then active = d.name end
+            end
+        end)
+        if active and fileExists(resolveConfigPath(self, active)) then name = active end
+    end
+    local path, resolved = resolveConfigPath(self, name)
+    if not path then return false end
+    if name ~= nil and not fileExists(path) then return false end
+    local data = nil
+    pcall(function()
+        if fileExists(path) then
+            local raw = readfile(path)
+            local ok, d = pcall(function() return jsonDecodeRaw(raw) end)
+            if ok and type(d) == "table" then data = d end
+        end
+    end)
+    self._configPath = path
+    self._configName = resolved or DEFAULT_CONFIG
+    self._loadingConfig = true
+    for key, ctrl in pairs(self._config or {}) do
+        if data and data[key] ~= nil and type(ctrl.Set) == "function" then
+            pcall(function() ctrl:Set(jsonToCfg(data[key])) end)
+        end
+        ctrl._configCurrent = ctrl._configGet and ctrl._configGet() or ctrl.Value
+        syncConfigValue(ctrl)
+    end
+    self._loadingConfig = false
+    return true
+end
+function Axiom:GetConfigs()
+    local out, seen = { DEFAULT_CONFIG }, { [DEFAULT_CONFIG] = true }
+    for _, n in ipairs(listConfigFiles(self)) do
+        if not seen[n] and n ~= DEFAULT_CONFIG then seen[n] = true; out[#out + 1] = n end
+    end
+    return out
+end
+function Axiom:ConfigExists(name) return fileExists(resolveConfigPath(self, name)) end
+function Axiom:SetConfig(name)
+    local path, resolved = resolveConfigPath(self, name)
+    if not path then return false end
+    self._configPath = path; self._configName = resolved
+    return true
+end
+function Axiom:DeleteConfig(name)
+    local path, resolved = resolveConfigPath(self, name)
+    if not path or resolved == DEFAULT_CONFIG then return false end
+    local removed = false
+    pcall(function() if fileExists(path) then delfile(path); removed = true end end)
+    if self._configName == resolved then
+        self._configName = DEFAULT_CONFIG
+        self._configPath = self._assetDir .. "/config.json"
+    end
+    return removed
+end
+function Axiom:RenameConfig(oldName, newName)
+    local from, fromName = resolveConfigPath(self, oldName)
+    local to, toName = resolveConfigPath(self, newName)
+    if not (from and to) then return false end
+    if fromName == DEFAULT_CONFIG or toName == DEFAULT_CONFIG then return false end
+    if fromName == toName or fileExists(to) then return false end
+    local ok = false
+    pcall(function() if fileExists(from) then writefile(to, readfile(from)); delfile(from); ok = true end end)
+    if ok and self._configName == fromName then self._configName = toName; self._configPath = to end
+    return ok
+end
+function Axiom:GetConfigName() return self._configName or DEFAULT_CONFIG end
+function Axiom:GetConfigPath() return self._configPath end
+function Axiom:GetConfigDir() return self._configDir end
+function Axiom:GetAssetDir() return self._assetDir end
+
 return Axiom
