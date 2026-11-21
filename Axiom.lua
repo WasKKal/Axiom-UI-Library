@@ -512,10 +512,10 @@ function Axiom.Notify(o)
         ClipsDescendants = true, BorderSizePixel = 0, Visible = true, ZIndex = 9999 })
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
-    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：内缩 2px 让出边框描边，
-    -- CanvasGroup 圆角裁剪令其在上下圆角处随边框收口，绝不压住边框线条
+    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：贴近左边缘（x=1），
+    -- CanvasGroup + UICorner 圆角裁剪令其在上下圆角处随边框收口，不溢出圆角
     local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H),
-        Position = UDim2.fromOffset(2, 0), BackgroundColor3 = C.Accent,
+        Position = UDim2.fromOffset(1, 0), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 1 })
     corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
     -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
@@ -731,6 +731,13 @@ function Axiom.CreateWindow(opts)
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
+    -- 全屏输入拦截层：吸收空白区域的点击/触摸，防止穿透到 Roblox 3D 世界；
+    -- 位于 main(ZIndex=1) 之下(ZIndex=0)，不遮挡任何控件交互
+    local inputBlocker = inst("TextButton", gui, { Name = "InputBlocker",
+        Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
+        AutoButtonColor = false, Active = true, Visible = true, ZIndex = 0 })
+    self._inputBlocker = inputBlocker
     local W, H = 620, 440
     local SCALE = 0.65
     local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
@@ -1041,7 +1048,24 @@ function Axiom.CreateWindow(opts)
             corner(bfill, 7); grad(bfill, C.Accent, C.AccentW, 0); whiteSheen(bfill, 0)
             local btxt = label(b, o.Title or "Apply", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
             btxt.Size = UDim2.fromScale(1, 1); btxt.ZIndex = 5
-            connect(b.MouseButton1Click, function() emit(obj, nil) end)
+            -- 按压反馈：按下时轻微缩小并压暗，松开/移出还原
+            local bScale = inst("UIScale", b, { Scale = 1 })
+            local press = inst("Frame", b, { Size = UDim2.fromScale(1, 1),
+                BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
+                BorderSizePixel = 0, ZIndex = 4 })
+            corner(press, 7)
+            local function pressOn()
+                tweenProp(bScale, { Scale = 0.94 }, 0.08)
+                tweenProp(press, { BackgroundTransparency = 0.78 }, 0.08)
+            end
+            local function pressOff()
+                tweenProp(bScale, { Scale = 1 }, 0.12)
+                tweenProp(press, { BackgroundTransparency = 1 }, 0.12)
+            end
+            connect(b.MouseButton1Down, pressOn)
+            connect(b.MouseButton1Up, pressOff)
+            connect(b.MouseLeave, pressOff)
+            connect(b.MouseButton1Click, function() pressOff(); emit(obj, nil) end)
             function obj:Fire() emit(obj, nil) end
         elseif kind == "Slider" then
             local minN, maxN = o.Min or 0, o.Max or 100
