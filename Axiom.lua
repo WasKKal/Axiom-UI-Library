@@ -569,10 +569,10 @@ function Axiom.Notify(o)
         ClipsDescendants = true, BorderSizePixel = 0, Visible = true, ZIndex = 9999 })
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
-    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：贴近左边缘（x=1），
+    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：紧贴最左边缘（x=0），
     -- CanvasGroup + UICorner 圆角裁剪令其在上下圆角处随边框收口，不溢出圆角
     local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H),
-        Position = UDim2.fromOffset(1, 0), BackgroundColor3 = C.Accent,
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 1 })
     corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
     -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
@@ -788,13 +788,6 @@ function Axiom.CreateWindow(opts)
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
-    -- 全屏输入拦截层：吸收空白区域的点击/触摸，防止穿透到 Roblox 3D 世界；
-    -- 位于 main(ZIndex=1) 之下(ZIndex=0)，不遮挡任何控件交互
-    local inputBlocker = inst("TextButton", gui, { Name = "InputBlocker",
-        Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
-        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
-        AutoButtonColor = false, Active = true, Visible = true, ZIndex = 0 })
-    self._inputBlocker = inputBlocker
     local W, H = 620, 440
     local SCALE = 0.65
     local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
@@ -807,6 +800,13 @@ function Axiom.CreateWindow(opts)
     -- 避免入场动画收敛途中主窗口边框提前露出
     if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
     self.main = main
+    -- 窗口区域输入拦截层：仅覆盖窗口本体(fromScale 1,1)，随窗口缩放/移动/最小化自动贴合；
+    -- 吸收窗口内空白处的点击/触摸防止穿透到 Roblox，窗口外区域不再拦截、允许点击穿透
+    local inputBlocker = inst("TextButton", main, { Name = "InputBlocker",
+        Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
+        AutoButtonColor = false, Active = true, Visible = true, ZIndex = 1 })
+    self._inputBlocker = inputBlocker
     -- main 保持隐藏(GroupTransparency=1)，待图标/壁纸等资源全部就绪后再淡入（见资源门控）
 
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
