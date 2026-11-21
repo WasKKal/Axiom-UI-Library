@@ -2057,6 +2057,10 @@ function Axiom.CreateWindow(opts)
     function self:_closeWindow()
         if closing then return end
         closing = true
+        self._closing = true
+        pcall(function() if introLayer and introLayer.Parent then introLayer.Visible = false end end)
+        pcall(function() if self._mainScale then self._mainScale.Scale = self._baseScale end end)
+        pcall(function() main.GroupTransparency = 0 end)
         fade(confirm, 1, 0.2, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
         if type(self._stopExitHint) == "function" then self._stopExitHint() end
@@ -2253,9 +2257,9 @@ function Axiom.CreateWindow(opts)
     end
     local shown = false
     local function reveal()
-        if shown then return end
+        if shown or self._closing then return end
         shown = true
-        playIntro(function() fade(main, 0, 0.35) end)
+        playIntro(function() if not self._closing then fade(main, 0, 0.35) end end)
     end
     self._reveal = reveal
     local function preload()
