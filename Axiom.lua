@@ -186,6 +186,64 @@ end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
+-- ===== 屏幕变暗：模仿 TrashHub——手动循环渐变 Lighting + 半透明黑遮罩（不依赖 TweenService）=====
+local lightingOrig = nil
+local function lerpCol(a, b, t)
+    return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
+end
+local function tweenLighting(dark, dur)
+    local okL, lighting = pcall(function() return game:GetService("Lighting") end)
+    if not okL or not lighting then return end
+    if not lightingOrig then
+        local ok, b, a, o = pcall(function()
+            return lighting.Brightness, lighting.Ambient, lighting.OutdoorAmbient
+        end)
+        if ok then lightingOrig = { b = b, a = a, o = o } end
+    end
+    if not lightingOrig then return end
+    local fromB, fromA, fromO = lighting.Brightness, lighting.Ambient, lighting.OutdoorAmbient
+    local toB = dark and 0.4 or lightingOrig.b
+    local toA = dark and Color3.new(0.4, 0.4, 0.4) or lightingOrig.a
+    local toO = dark and Color3.new(0.4, 0.4, 0.4) or lightingOrig.o
+    local steps, waitT = 20, (dur or 0.3) / 20
+    local function run()
+        for i = 1, steps do
+            local t = i / steps
+            pcall(function()
+                lighting.Brightness = fromB + (toB - fromB) * t
+                lighting.Ambient = lerpCol(fromA, toA, t)
+                lighting.OutdoorAmbient = lerpCol(fromO, toO, t)
+            end)
+            task.wait(waitT)
+        end
+    end
+    if type(task) == "table" and type(task.spawn) == "function" then
+        pcall(task.spawn, run)
+    else
+        run()
+    end
+end
+-- 半透明黑遮罩手动循环渐变（模仿附件 fadeOut 的 30 步写法）
+local function tweenShadeAlpha(shadeObj, to, dur, done)
+    if not shadeObj then return end
+    local from = shadeObj.BackgroundTransparency or 1
+    local steps, waitT = 20, (dur or 0.3) / 20
+    local function run()
+        for i = 1, steps do
+            local t = i / steps
+            pcall(function() shadeObj.BackgroundTransparency = from + (to - from) * t end)
+            task.wait(waitT)
+        end
+        if to >= 0.999 then pcall(function() shadeObj.Visible = false end) end
+        if type(done) == "function" then pcall(done) end
+    end
+    if type(task) == "table" and type(task.spawn) == "function" then
+        pcall(task.spawn, run)
+    else
+        run()
+    end
+end
+
 local strokeBase = setmetatable({}, { __mode = "k" })
 local function collectStrokes(root, out)
     out = out or {}
@@ -455,8 +513,8 @@ function Axiom.Notify(o)
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
     -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白），宽度 3px，上下留 6px
-    local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H - 12),
-        Position = UDim2.fromOffset(0, 6), BackgroundColor3 = C.Accent,
+    local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H - 4),
+        Position = UDim2.fromOffset(0, 2), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 1 })
     corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
     -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
@@ -547,9 +605,12 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     inst("Frame", right, { Size = UDim2.fromOffset(1, bodyH),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
+    -- 右侧内容整体垂直居中：头像 + 名称 + 加载按钮
     local avSize = 96
+    local blockH = avSize + 12 + 26 + 18 + 40   -- 头像96 + 间距12 + 名称26 + 间距18 + 按钮40
+    local baseY = (bodyH - blockH) / 2
     local avatar = inst("ImageLabel", right, { Name = "Avatar", Size = UDim2.fromOffset(avSize, avSize),
-        Position = UDim2.fromOffset((rightW - avSize) / 2, 44), BackgroundColor3 = C.Row,
+        Position = UDim2.fromOffset((rightW - avSize) / 2, baseY), BackgroundColor3 = C.Row,
         BorderSizePixel = 0, ZIndex = 27 })
     corner(avatar, avSize / 2); stroke(avatar, C.Accent, 1.5, 0.4)
     local lpName = "Player"
@@ -566,7 +627,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     end)
     local uname = label(right, lpName, 15, C.Text, true, Enum.TextXAlignment.Center)
     uname.Size = UDim2.fromOffset(rightW - 20, 26)
-    uname.Position = UDim2.fromOffset(10, 44 + avSize + 12); uname.ZIndex = 27
+    uname.Position = UDim2.fromOffset(10, baseY + avSize + 12); uname.ZIndex = 27
 
     local function loginBtn(name, txt, y, a1, a2, cb, textGrad)
         local b = inst("TextButton", right, { Name = name, Size = UDim2.fromOffset(rightW - 36, 40),
@@ -582,9 +643,25 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         connect(b.MouseButton1Click, function() if type(cb) == "function" then pcall(cb) end end)
         return b, tx
     end
-    local by = 44 + avSize + 12 + 36
+    local by = baseY + avSize + 12 + 26 + 18
     local loadBtn, loadTx = loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, nil,
         { C.AccentW, Color3.new(1, 1, 1), 90 })
+    -- 加载脚本按钮：添加边框 + 强化蓝白渐变
+    stroke(loadBtn, C.AccentW, 1.5, 0.25)                       -- 蓝白边框
+    local loadFill = nil
+    for _, c in ipairs(loadBtn:GetChildren()) do
+        if c.ClassName == "Frame" and c.Size.X.Scale == 1 and c.Size.Y.Scale == 1 then loadFill = c end
+    end
+    if loadFill then
+        pcall(function() loadFill.UIGradient.Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 122, 235)),
+            ColorSequenceKeypoint.new(0.5, C.Accent),
+            ColorSequenceKeypoint.new(1, C.Accent2) }) end)
+    end
+    pcall(function() loadTx.UIGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, C.AccentW),
+        ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
+        ColorSequenceKeypoint.new(1, C.AccentW) }) end)
     -- 加载中：右侧 loader-circle 持续旋转；文字左移一点点；延迟 1.5-2.5s 后进入主界面
     local spinConn = nil
     local function stopSpin()
@@ -619,10 +696,6 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             self:_showMainUI()
             if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
         end)
-    end)
-    loginBtn("UnloadScript", "卸载脚本", by + 52, C.DeepGray1, C.DeepGray2, function()
-        if type(opts.OnUnloadScript) == "function" then pcall(opts.OnUnloadScript) end
-        self:_closeWindow()
     end)
 
     function self:_showMainUI()
@@ -1201,16 +1274,19 @@ function Axiom.CreateWindow(opts)
 
     local function hideConfirm()
         fade(confirm, 1, 0.18, function() confirm.Visible = false end)
-        fadeAny(shade, 1, 0.18, function() shade.Visible = false end)
+        tweenShadeAlpha(shade, 1, 0.2)
+        tweenLighting(false, 0.3)  -- 恢复 Lighting 原值
     end
     function self:_openCloseConfirm()
         shade.Visible = true; confirm.Visible = true
-        fadeAny(shade, 0.55, 0.2)
+        tweenShadeAlpha(shade, 0.35, 0.3)  -- 手动循环渐变半透明黑遮罩
+        tweenLighting(true, 0.3)           -- Lighting 环境变暗（模仿 TrashHub）
         fade(confirm, 0, 0.22)
     end
     function self:_closeWindow()
         fade(confirm, 1, 0.2, function() confirm.Visible = false end)
-        fadeAny(shade, 1, 0.2, function() shade.Visible = false end)
+        tweenShadeAlpha(shade, 1, 0.2)
+        tweenLighting(false, 0.3)
         fade(main, 1, 0.35, function()
             pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
         end)
