@@ -1048,6 +1048,70 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local sfill = inst("Frame", strack, { Size = UDim2.fromScale((pct - minPct) / (maxPct - minPct), 1),
         BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 31 })
     corner(sfill, 3)
+    local pvBaseScale = self._baseScale or 0.65
+    local preview = inst("Frame", gui, { Name = "SizePreview", AnchorPoint = Vector2.new(0.5, 0.5),
+        Size = UDim2.fromOffset(W * pvBaseScale, H * pvBaseScale), Position = UDim2.new(0.5, 0, 0.5, 0),
+        BackgroundColor3 = C.Accent, BackgroundTransparency = 0.9, BorderSizePixel = 0,
+        Visible = false, ZIndex = 2 })
+    corner(preview, 12)
+    local pvStroke = stroke(preview, C.AccentW, 2, 0.25)
+    local pvTweens = {}
+    local pvSnap = true
+    local function restorePvAlpha()
+        pcall(function()
+            preview.BackgroundTransparency = 0.9
+            if pvStroke then pvStroke.Transparency = 0.25 end
+        end)
+    end
+    local function showPreview()
+        pcall(function() preview.Visible = true end)
+        restorePvAlpha()
+        pvSnap = true
+    end
+    local function hidePreview()
+        pcall(function() preview.Visible = false end)
+        restorePvAlpha()
+        pvSnap = false
+    end
+    local function tweenPreview(nw, nh, cx, cy)
+        showPreview()
+        if pvSnap then
+            pvSnap = false
+            pcall(function()
+                preview.Size = UDim2.fromOffset(nw, nh)
+                preview.Position = UDim2.fromOffset(cx, cy)
+            end)
+            return
+        end
+        pcall(function()
+            local ts = game:GetService("TweenService")
+            for _, tw in ipairs(pvTweens) do pcall(function() tw:Cancel() end) end
+            pvTweens = {}
+            if not ts then
+                preview.Size = UDim2.fromOffset(nw, nh)
+                preview.Position = UDim2.fromOffset(cx, cy)
+                return
+            end
+            local ti = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+            local tw1 = ts:Create(preview, ti, { Size = UDim2.fromOffset(nw, nh) })
+            local tw2 = ts:Create(preview, ti, { Position = UDim2.fromOffset(cx, cy) })
+            pvTweens[1] = tw1; pvTweens[2] = tw2
+            tw1:Play(); tw2:Play()
+        end)
+    end
+    local function updatePreview(k)
+        if not k then hidePreview(); return end
+        local nw, nh = W * k, H * k
+        local curK = (self._mainScale and self._mainScale.Scale) or pvBaseScale
+        local curW, curH = W * curK, H * curK
+        local mp = main.Position
+        local cx = (mp.X.Scale or 0) * 0 + mp.X.Offset + curW / 2
+        local cy = (mp.Y.Scale or 0) * 0 + mp.Y.Offset + curH / 2
+        tweenPreview(nw, nh, cx, cy)
+    end
+    self._showSizePreview = showPreview
+    self._hideSizePreview = hidePreview
+    self._updateSizePreview = updatePreview
     local sdrag = false
     local function sfrom(input)
         local okX, ax = pcall(function() return input.Position.X end)
@@ -1058,6 +1122,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             pct = math.floor(minPct + clamp((ax - rel) / wid, 0, 1) * (maxPct - minPct))
             sfill.Size = UDim2.fromScale(clamp((pct - minPct) / (maxPct - minPct), 0.02, 1), 1)
             pctTx.Text = tostring(pct) .. "%"
+            updatePreview(pvBaseScale * (pct / 100))
         end
     end
     connect(strack.InputBegan, function(input) sdrag = true; sfrom(input) end)
@@ -1079,19 +1144,29 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         local newPos = UDim2.new(0.5, -(W * k) / 2, 0.5, -(H * k) / 2)
         tweenEx(self._mainScale, { Scale = k }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
         tweenEx(main, { Position = newPos }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        hidePreview()
         if type(Axiom.Notify) == "function" then
             pcall(function() Axiom.Notify({ Title = "设置", Text = "你的设定已保存!", Type = "success", Duration = 2.5 }) end)
         end
     end)
     local settingsOpen = false
+    self._settingsOpenState = false
     function self:_toggleSettingsPanel()
         if self._isLogin then return end
         settingsOpen = not settingsOpen
+        self._settingsOpenState = settingsOpen
         if settingsOpen then
+            pct = math.floor(((self._mainScale and self._mainScale.Scale or pvBaseScale) / pvBaseScale) * 100 + 0.5)
+            pct = clamp(pct, minPct, maxPct)
+            sfill.Size = UDim2.fromScale(clamp((pct - minPct) / (maxPct - minPct), 0.02, 1), 1)
+            pctTx.Text = tostring(pct) .. "%"
             fade(contentLayer, 1, 0.25, function() contentLayer.Visible = false end)
             sLayer.Visible = true; sLayer.GroupTransparency = 1
             fade(sLayer, 0, 0.3)
+            if type(self._startExitHint) == "function" then self:_startExitHint() end
         else
+            hidePreview()
+            if type(self._stopExitHint) == "function" then self:_stopExitHint() end
             fade(sLayer, 1, 0.24, function() sLayer.Visible = false end)
             contentLayer.Visible = true; contentLayer.GroupTransparency = 1
             fade(contentLayer, 0, 0.3)
@@ -1173,6 +1248,58 @@ function Axiom.CreateWindow(opts)
         connect(d.MouseButton1Up, lighten)
         connect(d.MouseLeave, lighten)
     end
+    local hintIconX, hintTextX = 68, 86
+    local hintIcon = inst("ImageButton", bar, { Name = "ExitHintIcon", Size = UDim2.fromOffset(14, 14),
+        Position = UDim2.fromOffset(hintIconX, 10), BackgroundTransparency = 1, ImageTransparency = 1,
+        AutoButtonColor = false, Visible = false, ZIndex = 6 })
+    applyIcon(hintIcon, "square-arrow-left-exit", C.Accent)
+    local hintText = inst("TextButton", bar, { Name = "ExitHintText", Size = UDim2.fromOffset(112, 16),
+        Position = UDim2.fromOffset(hintTextX, 9), BackgroundTransparency = 1, Text = "点击此处关闭页面",
+        TextColor3 = C.Accent, TextSize = 10, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
+        TextTransparency = 1, AutoButtonColor = false, Visible = false, ZIndex = 6 })
+    local hintConn = nil
+    local hintRun = false
+    local hintT = 0
+    local function stopExitHint()
+        hintRun = false
+        if hintConn then pcall(function() hintConn:Disconnect() end); hintConn = nil end
+        pcall(function() hintIcon.Visible = false; hintText.Visible = false end)
+    end
+    local function startExitHint()
+        if hintRun then return end
+        hintRun = true
+        pcall(function() hintIcon.Visible = true; hintText.Visible = true end)
+        local okRs, rs = pcall(function() return game:GetService("RunService") end)
+        if okRs and rs then
+            local okc, conn = pcall(function()
+                return rs.Heartbeat:Connect(function(dt)
+                    if not hintRun then return end
+                    hintT = hintT + (dt or 1 / 60)
+                    local phase = (math.sin(hintT * 2.2) + 1) * 0.5
+                    local trans = 0.12 + phase * 0.48
+                    local shift = -3 * phase
+                    pcall(function()
+                        hintIcon.ImageTransparency = trans
+                        hintText.TextTransparency = trans
+                        hintIcon.Position = UDim2.fromOffset(hintIconX + shift, 10)
+                        hintText.Position = UDim2.fromOffset(hintTextX + shift, 9)
+                    end)
+                end)
+            end)
+            if okc then hintConn = conn end
+        else
+            pcall(function() hintIcon.ImageTransparency = 0.12; hintText.TextTransparency = 0.12 end)
+        end
+    end
+    local function closeFromHint()
+        if type(self._toggleSettingsPanel) == "function" and self._settingsOpenState then
+            self:_toggleSettingsPanel()
+        end
+    end
+    connect(hintIcon.MouseButton1Click, closeFromHint)
+    connect(hintText.MouseButton1Click, closeFromHint)
+    self._startExitHint = startExitHint
+    self._stopExitHint = stopExitHint
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
     bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.fromOffset(160, 7); bt.ZIndex = 4
     local plusBtn = inst("ImageButton", bar, { Name = "ExpandPlus", Size = UDim2.fromOffset(16, 16),
@@ -1376,6 +1503,9 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 44, y + 8), BackgroundColor3 = on and C.Accent or C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
+            local sheen = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
+                BackgroundTransparency = 0, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
+            corner(sheen, 12); whiteSheen(sheen, 0, 0.88, 0.74)
             local kn = inst("Frame", tr, { Size = UDim2.fromOffset(18, 18),
                 Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0),
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
@@ -1383,6 +1513,7 @@ function Axiom.CreateWindow(opts)
             local function refresh()
                 local bg = on and C.Accent or C.Track
                 local kp = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
+                if on then sheen.Visible = true end
                 local done = false
                 pcall(function()
                     local ts = game:GetService("TweenService")
@@ -1390,11 +1521,19 @@ function Axiom.CreateWindow(opts)
                     local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                     ts:Create(tr, ti, { BackgroundColor3 = bg }):Play()
                     ts:Create(kn, ti, { Position = kp }):Play()
+                    local stw = ts:Create(sheen, ti, { BackgroundTransparency = on and 0 or 1 })
+                    if not on then
+                        stw.Completed:Connect(function()
+                            pcall(function() sheen.Visible = false end)
+                        end)
+                    end
+                    stw:Play()
                     done = true
                 end)
                 if not done then
                     tr.BackgroundColor3 = bg
                     kn.Position = kp
+                    pcall(function() sheen.BackgroundTransparency = on and 0 or 1; sheen.Visible = on end)
                 end
             end
             connect(tr.MouseButton1Click, function()
