@@ -6,7 +6,7 @@
 
 - **主 UI 壁纸**：`CreateWindow({ Background = "图片URL" })` 启用壁纸，`ScaleType.Crop` 自动裁剪填充 + `UICorner` 圆角 + 暗化遮罩；壁纸仅在**主 UI 内容层**内，登录页不显示。http(s) 图片优先缓存为本地文件并用 `getcustomasset` 转 asset，失败回退原 URL。默认仓库自带 `axiom-background.jpg`。
 - **资源门控**：图标模块与背景图（含壁纸实际下载，用 `ContentProvider:PreloadAsync` 等待）等资源**全部就绪后入场动画才开始**，避免边框先于壁纸出现；带 8 秒超时兜底，网络异常也不会卡住不显示。
-- **UI 入场动画**：资源就绪后播放——画面渐暗、屏幕中心出现大号 `Title`；随后边框从**整个屏幕 + 直角**（模仿 DynamicCow 边框计算）同步收缩为窗口矩形并渐渐圆角，大标题用 `Quint` 曲线变速缩小并平滑上移到最终标题位；到位后入场层淡出、主 UI 淡入并销毁动画层。主窗口边框初始隐藏，随入场动画结束才淡入显现，**不会在动画收敛途中提前露出**。
+- **UI 入场动画**：资源就绪后播放——画面渐暗、屏幕中心出现大号 `Title`；随后边框从**整个屏幕 + 直角**（模仿 DynamicCow 边框计算）同步收缩为窗口矩形并渐渐圆角，大标题用 `Quint` 曲线变速缩小并平滑上移到最终标题位；到位后入场层淡出、主 UI 淡入并销毁动画层。主窗口边框初始隐藏，随入场动画结束才淡入显现，**不会在动画收敛途中提前露出**。入场黑色蒙版/边框为 `fromScale(1,1)` 全屏元素，所在 `ScreenGui` 开启 `IgnoreGuiInset`，**覆盖 Roblox Topbar 区域不被裁切**。
 - **执行器兼容**：所有实例属性赋值均逐项 `pcall` 容错，某些执行器缺少个别属性（如 `ScrollingFrame.HorizontalScrollBarEnabled`）时只跳过该项，不再中断整个脚本；滚动容器仅用通用属性 `ScrollingDirection=Y` 实现禁用左右滑动。
 - **紧凑窗口**：内部 620×440 设计坐标配合 `UIScale=0.65`，视觉尺寸缩小约三分之一且始终居中；`DisplayOrder=100000` 并挂载到 `gethui`（下游回退 hidden_gui → PlayerGui → CoreGui）。
 - **动态选项卡**：左侧菜单由 `AddTab` 数量决定，调用几次就显示几项，不再出现示例外的多余选项卡；第一项默认激活。切换时旧蓝白渐变条缩短渐隐、新条伸长渐显。
@@ -91,7 +91,7 @@ local Win = Axiom.CreateWindow({
 
 ### `Axiom.Notify(o)`（全局通知，推荐）
 
-照抄 WasUI-Pro 通知系统：**固定 250×30 紧凑框架**（不再随文字自适应高度），右上角堆叠、距右缘 10px、间距 8px；**左边缘 3px 蓝白竖向渐变条**。`o`：`Title`（12 号粗体）、`Text`（或 `Info`，10 号单行超长截断）、`Duration`（秒，默认 3）、`Type`（`info`/`success`/`warning`/`error`，仅影响描边着色）。入场从屏幕右侧外滑入 0.35s，到期后其余通知按创建顺序自动上移补位，当前通知滑出右侧+淡出销毁。返回 `{ Frame, Dismiss() }`，可手动提前关闭。
+照抄 WasUI-Pro 通知系统：**固定 250×30 紧凑框架**（不再随文字自适应高度），右上角堆叠、距右缘 10px、间距 8px；**左边缘 3px 蓝白竖向渐变条**。通知框架用 `CanvasGroup` + `UICorner` 做**圆角真实裁剪**，渐变条纵向满高但**内缩 2px** 让出左侧描边，随上下圆角收口，不会压住边框线条、也不会溢出圆角。`o`：`Title`（12 号粗体）、`Text`（或 `Info`，10 号单行超长截断）、`Duration`（秒，默认 3）、`Type`（`info`/`success`/`warning`/`error`，仅影响描边着色）。入场从屏幕右侧外滑入 0.35s，到期后其余通知按创建顺序自动上移补位，当前通知滑出右侧+淡出销毁。返回 `{ Frame, Dismiss() }`，可手动提前关闭。
 
 ```lua
 Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success", Duration = 5 })
