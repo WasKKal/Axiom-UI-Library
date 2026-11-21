@@ -31,6 +31,11 @@ local Win = Axiom.CreateWindow({
     OnLoadScript = function() print("load script -> main UI") end,
 })
 
+-- ===== 通知快捷封装：控件回调触发右上角堆叠通知 =====
+local function toast(title, text, typ)
+    Axiom.Notify({ Title = title, Text = text, Type = typ or "info", Duration = 3 })
+end
+
 -- ===== 主 UI 选项卡（加载脚本后显示）=====
 local Tab = Win:AddTab("General", "settings")
 Tab:AddParagraph({
@@ -39,55 +44,63 @@ Tab:AddParagraph({
 })
 Tab:AddToggle({
     Title = "Master Switch", Desc = "启用全部功能", Icon = "toggle-right", Default = true,
-    Callback = function(v) print("toggle ->", v) end,
+    Callback = function(v) toast("主开关", "已" .. (v and "启用" or "关闭") .. "全部功能", v and "success" or "warning") end,
 })
 local Slider = Tab:AddSlider({
     Title = "Walk Speed", Desc = "移动速度", Icon = "gauge",
     Min = 0, Max = 200, Default = 65,
-    Callback = function(v) print("slider ->", v) end,
+    Callback = function(v) toast("移动速度", "当前速度：" .. tostring(v), "info") end,
 })
 local Dropdown = Tab:AddDropdown({
     Title = "Theme Preset", Desc = "主题预设", Icon = "list-filter",
     Multi = true, Options = { "Default", "Neon", "Minimal", "Retro", "Mono" },
     Default = { "Neon", "Retro" },
-    Callback = function(list) print("dropdown ->", table.concat(list, ",")) end,
+    Callback = function(list) toast("主题预设", "已选 " .. table.concat(list, "、"), "success") end,
 })
 Tab:AddColorPicker({
     Title = "Accent Color", Desc = "强调色", Icon = "palette",
     Default = Color3.fromRGB(88, 150, 255),
-    Callback = function(c) print("color ->", c) end,
+    Callback = function(c) toast("强调色", "RGB(" .. math.floor(c.R * 255) .. ", " .. math.floor(c.G * 255) .. ", " .. math.floor(c.B * 255) .. ")", "info") end,
 })
 Tab:AddButton({
     Title = "Apply", Desc = "应用设置", Icon = "send",
-    Callback = function() print("apply clicked") end,
+    Callback = function() toast("应用成功", "所有设置已保存并生效", "success") end,
 })
 Slider:SetValue(120)
 Dropdown:Select("Mono", true)
 
 local TabVisual = Win:AddTab("Appearance", "palette")
-TabVisual:AddToggle({ Title = "Transparency", Desc = "窗口半透明", Icon = "toggle-right", Default = false })
-TabVisual:AddSlider({ Title = "Corner Radius", Desc = "圆角大小", Icon = "gauge", Min = 0, Max = 24, Default = 12 })
+TabVisual:AddToggle({ Title = "Transparency", Desc = "窗口半透明", Icon = "toggle-right", Default = false,
+    Callback = function(v) toast("窗口半透明", v and "已开启" or "已关闭", "info") end })
+TabVisual:AddSlider({ Title = "Corner Radius", Desc = "圆角大小", Icon = "gauge", Min = 0, Max = 24, Default = 12,
+    Callback = function(v) toast("圆角大小", "半径：" .. tostring(v) .. "px", "info") end })
 TabVisual:AddDropdown({
     Title = "Font Style", Desc = "字体风格", Icon = "list-filter",
     Options = { "Source Sans", "Gotham", "Roboto", "Arial", "Verdana", "Segoe UI", "Comic Sans" },
     Default = "Gotham",
+    Callback = function(v) toast("字体风格", "已切换为 " .. tostring(v), "success") end,
 })
-TabVisual:AddColorPicker({ Title = "Highlight", Desc = "高亮颜色", Icon = "palette", Default = Color3.fromRGB(76, 209, 153) })
+TabVisual:AddColorPicker({ Title = "Highlight", Desc = "高亮颜色", Icon = "palette", Default = Color3.fromRGB(76, 209, 153),
+    Callback = function() toast("高亮颜色", "高亮色已更新", "success") end })
 
 local TabSystem = Win:AddTab("System", "monitor")
-TabSystem:AddToggle({ Title = "Auto Launch", Desc = "启动时自动运行", Icon = "toggle-right", Default = true })
-TabSystem:AddToggle({ Title = "Notifications", Desc = "启用通知", Icon = "bell", Default = true })
-TabSystem:AddSlider({ Title = "Refresh Rate", Desc = "刷新频率", Icon = "gauge", Min = 30, Max = 240, Default = 60 })
+TabSystem:AddToggle({ Title = "Auto Launch", Desc = "启动时自动运行", Icon = "toggle-right", Default = true,
+    Callback = function(v) toast("自动运行", v and "开机自启已开启" or "开机自启已关闭", v and "success" or "warning") end })
+TabSystem:AddToggle({ Title = "Notifications", Desc = "启用通知", Icon = "bell", Default = true,
+    Callback = function(v) toast("通知开关", v and "通知已启用" or "通知已静音", "info") end })
+TabSystem:AddSlider({ Title = "Refresh Rate", Desc = "刷新频率", Icon = "gauge", Min = 30, Max = 240, Default = 60,
+    Callback = function(v) toast("刷新频率", tostring(v) .. " Hz", "info") end })
 TabSystem:AddDropdown({
     Title = "Language", Desc = "界面语言", Icon = "list-filter", Multi = true,
     Options = { "简体中文", "English", "日本語", "Français" }, Default = { "简体中文" },
+    Callback = function(list) toast("界面语言", "已切换 " .. table.concat(list, "、"), "success") end,
 })
 
 local TabAbout = Win:AddTab("About", "circle-help")
 TabAbout:AddParagraph({ Title = "Axiom UI Library", Desc = "关于", Icon = "align-left",
     Text = "主从分栏布局 · Lucide 本地缓存 · 多选下拉 · 全窗口渐隐。滚动容器支持竖向滚动，下拉菜单可溢出窗口。" })
 TabAbout:AddButton({ Title = "GitHub", Desc = "打开仓库", Icon = "send",
-    Callback = function() print("https://github.com/WasKKal/Axiom-UI-Library") end })
+    Callback = function() toast("仓库地址", "github.com/WasKKal/Axiom-UI-Library", "info") end })
 
 -- ===== 启动页更新日志（进入脚本时显示）=====
 Win:AddLoginParagraph({
