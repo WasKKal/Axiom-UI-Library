@@ -1071,15 +1071,17 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             fills[i] = f
         end
         later(0.06, function()
-            deepFade(left, 0.72, 0.3)
+            deepFade(left, 0.9, 0.3)
             fadeAny(right, 1, 0.3)
+            deepFade(uname, 0.6, 0.3)
+            deepFade(loadBtn, 0.55, 0.3)
             if rightDivider then tweenProp(rightDivider, { BackgroundTransparency = 1 }, 0.3) end
             tweenProp(brand, { TextTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, -46) }, 0.32)
             tweenProp(under, { BackgroundTransparency = 0, Size = UDim2.fromOffset(128, 2) }, 0.32)
         end)
         for i = 1, 3 do
             later(0.18 + (i - 1) * 0.08, function()
-                tweenProp(bars[i], { BackgroundTransparency = 0.35 }, 0.16)
+                tweenProp(bars[i], { BackgroundTransparency = 0.22 }, 0.16)
                 tweenProp(fills[i], { BackgroundTransparency = 0, Size = UDim2.fromScale(1, 1) }, 0.16)
             end)
         end
