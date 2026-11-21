@@ -414,42 +414,6 @@ end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
-local lightingOrig = nil
-local function lerpCol(a, b, t)
-    return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
-end
-local function tweenLighting(dark, dur)
-    local okL, lighting = pcall(function() return game:GetService("Lighting") end)
-    if not okL or not lighting then return end
-    if not lightingOrig then
-        local ok, b, a, o = pcall(function()
-            return lighting.Brightness, lighting.Ambient, lighting.OutdoorAmbient
-        end)
-        if ok then lightingOrig = { b = b, a = a, o = o } end
-    end
-    if not lightingOrig then return end
-    local fromB, fromA, fromO = lighting.Brightness, lighting.Ambient, lighting.OutdoorAmbient
-    local toB = dark and 0.4 or lightingOrig.b
-    local toA = dark and Color3.new(0.4, 0.4, 0.4) or lightingOrig.a
-    local toO = dark and Color3.new(0.4, 0.4, 0.4) or lightingOrig.o
-    local steps, waitT = 20, (dur or 0.3) / 20
-    local function run()
-        for i = 1, steps do
-            local t = i / steps
-            pcall(function()
-                lighting.Brightness = fromB + (toB - fromB) * t
-                lighting.Ambient = lerpCol(fromA, toA, t)
-                lighting.OutdoorAmbient = lerpCol(fromO, toO, t)
-            end)
-            task.wait(waitT)
-        end
-    end
-    if type(task) == "table" and type(task.spawn) == "function" then
-        pcall(task.spawn, run)
-    else
-        run()
-    end
-end
 local function tweenShadeAlpha(shadeObj, to, dur, done)
     if not shadeObj then return end
     local from = shadeObj.BackgroundTransparency or 1
@@ -1618,18 +1582,15 @@ function Axiom.CreateWindow(opts)
     local function hideConfirm()
         fade(confirm, 1, 0.18, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
-        tweenLighting(false, 0.3)  
     end
     function self:_openCloseConfirm()
         shade.Visible = true; confirm.Visible = true
-        tweenShadeAlpha(shade, 0.35, 0.3)  
-        tweenLighting(true, 0.3)           
+        tweenShadeAlpha(shade, 0.35, 0.3)
         fade(confirm, 0, 0.22)
     end
     function self:_closeWindow()
         fade(confirm, 1, 0.2, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
-        tweenLighting(false, 0.3)
         fade(main, 1, 0.35, function()
             pcall(function() if self.gui and self.gui.Parent then self.gui:Destroy() end end)
         end)
