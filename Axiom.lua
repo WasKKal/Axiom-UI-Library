@@ -505,16 +505,17 @@ function Axiom.Notify(o)
     if o.Type == "success" then borderColor = C.Green
     elseif o.Type == "warning" then borderColor = Color3.fromRGB(255, 189, 46)
     elseif o.Type == "error" then borderColor = Color3.fromRGB(255, 95, 86) end
-    -- 框架：固定 250×30，从屏幕右侧外滑入；ClipsDescendants 裁掉圆角外的渐变条
-    local frame = inst("Frame", st.gui, { Name = "Notice",
+    -- 框架：固定 250×30，从屏幕右侧外滑入；CanvasGroup 按 UICorner 圆角真实裁剪内部指示条
+    local frame = inst("CanvasGroup", st.gui, { Name = "Notice",
         Size = UDim2.fromOffset(N_W, N_H), Position = UDim2.new(1, N_W + 20, 0, N_TOP),
-        BackgroundColor3 = C.Panel, BackgroundTransparency = 0.2,
+        BackgroundColor3 = C.Panel, BackgroundTransparency = 0.2, GroupTransparency = 0,
         ClipsDescendants = true, BorderSizePixel = 0, Visible = true, ZIndex = 9999 })
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
-    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白），宽度 3px，上下留 6px
-    local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H - 4),
-        Position = UDim2.fromOffset(0, 2), BackgroundColor3 = C.Accent,
+    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：内缩 2px 让出边框描边，
+    -- CanvasGroup 圆角裁剪令其在上下圆角处随边框收口，绝不压住边框线条
+    local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H),
+        Position = UDim2.fromOffset(2, 0), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 1 })
     corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
     -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
@@ -723,8 +724,10 @@ end
 function Axiom.CreateWindow(opts)
     opts = opts or {}
     local self = setmetatable({ _rows = 0, _tabs = {}, _activeTab = nil }, Axiom)
+    -- IgnoreGuiInset 让 fromScale(1,1) 覆盖整屏（含 Roblox Topbar 区域），
+    -- 否则入场黑色蒙版会被 TopbarApp 裁掉顶部一条
     local gui = inst("ScreenGui", nil, { Name = "AxiomUI", ResetOnSpawn = false,
-        ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100000 })
+        IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100000 })
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
