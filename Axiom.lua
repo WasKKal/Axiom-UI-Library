@@ -679,9 +679,12 @@ function Axiom.Notify(o)
     local title = tostring(o.Title or "Notification")
     local content = tostring(o.Text or o.Info or "")
     local borderColor = C.Line
-    if o.Type == "success" then borderColor = C.Green
-    elseif o.Type == "warning" then borderColor = Color3.fromRGB(255, 189, 46)
-    elseif o.Type == "error" then borderColor = Color3.fromRGB(255, 95, 86) end
+    local mainColor = C.Accent
+    if o.Type == "success" then borderColor = C.Green; mainColor = C.Green
+    elseif o.Type == "warning" then borderColor = Color3.fromRGB(255, 189, 46); mainColor = borderColor
+    elseif o.Type == "error" then borderColor = Color3.fromRGB(255, 95, 86); mainColor = borderColor end
+    local okCustom, custom = pcall(function() return o.Color and o.Color.R and o.Color end)
+    if okCustom and custom then borderColor = custom; mainColor = custom end
     local frame = inst("CanvasGroup", st.gui, { Name = "Notice",
         Size = UDim2.fromOffset(N_W, N_H), Position = UDim2.new(1, N_W + 20, 0, N_TOP),
         BackgroundColor3 = C.Panel, BackgroundTransparency = 0.2, GroupTransparency = 0,
@@ -689,9 +692,9 @@ function Axiom.Notify(o)
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
     local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H),
-        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Accent,
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = mainColor,
         BorderSizePixel = 0, ZIndex = 1 })
-    corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
+    corner(rail, 2); grad(rail, mainColor, Color3.new(1, 1, 1), 90)
     local tt = label(frame, title, 12, C.Text, true, Enum.TextXAlignment.Left)
     tt.Name = "Title"; tt.Size = UDim2.new(1, -16, 0, 14); tt.Position = UDim2.fromOffset(10, 2)
     tt.ZIndex = 2
