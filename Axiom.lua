@@ -971,7 +971,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local right = inst("Frame", layer, { Size = UDim2.fromOffset(rightW, bodyH),
         Position = UDim2.fromOffset(leftW, 0), BackgroundColor3 = C.Side,
         BorderSizePixel = 0, ZIndex = 26 })
-    inst("Frame", right, { Size = UDim2.fromOffset(1, bodyH),
+    local rightDivider = inst("Frame", right, { Size = UDim2.fromOffset(1, bodyH),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
     local avSize = 96
@@ -1028,34 +1028,99 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         ColorSequenceKeypoint.new(0, C.AccentW),
         ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
         ColorSequenceKeypoint.new(1, C.AccentW) }) end)
-    local spinConn = nil
-    local function stopSpin()
-        if spinConn then pcall(function() spinConn:Disconnect() end); spinConn = nil end
+    local function later(t, fn)
+        if type(task) == "table" and type(task.delay) == "function" then
+            pcall(task.delay, t, fn)
+        else
+            fn()
+        end
     end
+    local function loginSequence(done)
+        pcall(function()
+            layer.AnchorPoint = Vector2.new(0.5, 0.5)
+            layer.Position = UDim2.fromOffset(W / 2, 34 + bodyH / 2)
+        end)
+        local tilt = inst("UIScale", layer, { Scale = 1 })
+        if tilt then tweenProp(tilt, { Scale = 0.972 }, 0.26) end
+        local brand = label(layer, opts.Title or "AXIOM", 42, C.Text, true, Enum.TextXAlignment.Center)
+        brand.Name = "LoginBrand"
+        brand.Size = UDim2.fromOffset(460, 54)
+        brand.Position = UDim2.new(0.5, 0, 0.5, -40)
+        brand.AnchorPoint = Vector2.new(0.5, 0.5)
+        brand.TextTransparency = 1
+        brand.ZIndex = 62
+        local under = inst("Frame", layer, { Name = "LoginBrandLine", Size = UDim2.fromOffset(2, 2),
+            Position = UDim2.new(0.5, 0, 0.5, -8), AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = C.Accent, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 62 })
+        corner(under, 1)
+        grad(under, C.Accent, Color3.new(1, 1, 1), 0)
+        local bw, bh, gap = 34, 4, 10
+        local total = bw * 3 + gap * 2
+        local bars, fills = {}, {}
+        for i = 1, 3 do
+            local b = inst("Frame", layer, { Name = "LoginBar" .. tostring(i),
+                Size = UDim2.fromOffset(bw, bh),
+                Position = UDim2.new(0.5, -(total / 2) + (i - 1) * (bw + gap), 0.5, 14),
+                BackgroundColor3 = C.Track, BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 62 })
+            corner(b, 2)
+            local f = inst("Frame", b, { Size = UDim2.fromScale(0, 1), BackgroundColor3 = C.Accent,
+                BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 63 })
+            corner(f, 2)
+            grad(f, C.Accent, Color3.new(1, 1, 1), 0)
+            bars[i] = b
+            fills[i] = f
+        end
+        later(0.06, function()
+            deepFade(left, 0.72, 0.3)
+            fadeAny(right, 1, 0.3)
+            if rightDivider then tweenProp(rightDivider, { BackgroundTransparency = 1 }, 0.3) end
+            tweenProp(brand, { TextTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, -46) }, 0.32)
+            tweenProp(under, { BackgroundTransparency = 0, Size = UDim2.fromOffset(128, 2) }, 0.32)
+        end)
+        for i = 1, 3 do
+            later(0.18 + (i - 1) * 0.08, function()
+                tweenProp(bars[i], { BackgroundTransparency = 0.35 }, 0.16)
+                tweenProp(fills[i], { BackgroundTransparency = 0, Size = UDim2.fromScale(1, 1) }, 0.16)
+            end)
+        end
+        later(0.52, function()
+            tweenProp(avatar, { Size = UDim2.fromOffset(34, 34),
+                Position = UDim2.fromOffset(14 - leftW, 10) }, 0.26)
+            deepFade(uname, 1, 0.18)
+            deepFade(loadBtn, 1, 0.18)
+            deepFade(left, 1, 0.2)
+        end)
+        later(0.72, function()
+            for i = 1, 3 do
+                tweenProp(fills[i], { BackgroundColor3 = Color3.new(1, 1, 1) }, 0.12)
+                tweenProp(bars[i], { BackgroundTransparency = 1 }, 0.2)
+                tweenProp(fills[i], { BackgroundTransparency = 1 }, 0.2)
+            end
+            tweenProp(brand, { TextTransparency = 1, Position = UDim2.new(0.5, 0, 0.5, -60) }, 0.22)
+            tweenProp(under, { BackgroundTransparency = 1, Size = UDim2.fromOffset(64, 2) }, 0.2)
+        end)
+        later(0.9, function()
+            tweenProp(layer, { Position = UDim2.fromOffset(W / 2, 34 + bodyH / 2 - 40) }, 0.3)
+            if tilt then tweenProp(tilt, { Scale = 1 }, 0.3) end
+            if type(done) == "function" then pcall(done) end
+        end)
+        later(1.6, function()
+            pcall(function()
+                if brand and brand.Parent then brand:Destroy() end
+                if under and under.Parent then under:Destroy() end
+                for i = 1, 3 do
+                    if bars[i] and bars[i].Parent then bars[i]:Destroy() end
+                end
+            end)
+        end)
+    end
+    self._loginSequence = loginSequence
     connect(loadBtn.MouseButton1Click, function()
         if self._loginLoading then return end
         self._loginLoading = true
         loadBtn.Active = false
-        tweenProp(loadTx, { Position = UDim2.new(0, -14, 0, 0) }, 0.25)
-        local loader = inst("ImageLabel", loadBtn, { Name = "LoadSpinner",
-            Size = UDim2.fromOffset(18, 18),
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.new(1, -18, 0.5, 0),
-            BackgroundTransparency = 1, ImageTransparency = 1, Rotation = 0, ZIndex = 29 })
-        applyIcon(loader, "loader-circle", Color3.new(1, 1, 1))
-        tweenProp(loader, { ImageTransparency = 0 }, 0.2)
-        local okRs, rs = pcall(function() return game:GetService("RunService") end)
-        if okRs and rs then
-            local okc, conn = pcall(function()
-                return rs.Heartbeat:Connect(function(dt)
-                    pcall(function() loader.Rotation = (loader.Rotation + (dt or 1 / 60) * 360) % 360 end)
-                end)
-            end)
-            if okc then spinConn = conn end
-        end
-        local wait = 0.3 + (math.random(0, 1000) / 1000) * 0.7
-        pcall(task.delay, wait, function()
-            stopSpin()
+        if loadTx then pcall(function() loadTx.Text = "加载中" end) end
+        loginSequence(function()
             self:_showMainUI()
             if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
         end)
@@ -1064,13 +1129,22 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         if not self._isLogin then return end
         self._isLogin = false
         restoreFlow()
-        fade(layer, 1, 0.4, function() layer.Visible = false end)
+        fade(layer, 1, 0.3, function() layer.Visible = false end)
+        pcall(function() contentLayer.Position = UDim2.fromOffset(0, 34 + 16) end)
         contentLayer.GroupTransparency = 1; contentLayer.Visible = true
-        fade(contentLayer, 0, 0.45)
-        for _, d in ipairs(dotList) do
+        fade(contentLayer, 0, 0.42)
+        pcall(function() tweenProp(contentLayer, { Position = UDim2.fromOffset(0, 34) }, 0.42) end)
+        for i, d in ipairs(dotList) do
             d.Visible = true; d.Active = true
+            local base = nil
+            pcall(function() base = d.BackgroundColor3 end)
             pcall(function() d.BackgroundTransparency = 1 end)
-            fadeAny(d, 0, 0.45)
+            local delay = (i - 1) * 0.06
+            tweenProp(d, { BackgroundTransparency = 0 }, 0.3, nil, delay)
+            if base then
+                pcall(function() d.BackgroundColor3 = Color3.new(1, 1, 1) end)
+                tweenProp(d, { BackgroundColor3 = base }, 0.36, nil, delay)
+            end
         end
     end
     contentLayer.Visible = false
