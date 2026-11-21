@@ -179,6 +179,63 @@ local function resolveHolder()
     return nil
 end
 local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
+-- ===== ColorPicker / Dropdown 共享辅助（照抄 AsLab 的实现细节）=====
+local function colorToHSV(c)
+    local ok, r, g, b = pcall(function() return c.R, c.G, c.B end)
+    if not ok or r == nil then return 0, 0, 1 end
+    local mx = math.max(r, g, b)
+    local mn = math.min(r, g, b)
+    local d = mx - mn
+    local h = 0
+    if d > 1e-6 then
+        if mx == r then h = ((g - b) / d) % 6
+        elseif mx == g then h = (b - r) / d + 2
+        else h = (r - g) / d + 4 end
+        h = h / 6
+    end
+    local sat = (mx <= 0) and 0 or (d / mx)
+    return h, sat, mx
+end
+local function hsvToColor(h, sat, val)
+    h = (h or 0) % 1
+    sat = clamp(sat or 0, 0, 1)
+    val = clamp(val or 0, 0, 1)
+    local i = math.floor(h * 6)
+    local f = h * 6 - i
+    local p = val * (1 - sat)
+    local q = val * (1 - f * sat)
+    local t = val * (1 - (1 - f) * sat)
+    local r, g, b
+    local m = i % 6
+    if m == 0 then r, g, b = val, t, p
+    elseif m == 1 then r, g, b = q, val, p
+    elseif m == 2 then r, g, b = p, val, t
+    elseif m == 3 then r, g, b = p, q, val
+    elseif m == 4 then r, g, b = t, p, val
+    else r, g, b = val, p, q end
+    return Color3.new(r, g, b)
+end
+local function isColor3(c)
+    if c == nil then return false end
+    local ok, r, g, b = pcall(function() return c.R, c.G, c.B end)
+    return ok and r ~= nil and g ~= nil and b ~= nil
+end
+local function inputPoint(i)
+    local p = i and i.Position
+    if p and p.X ~= nil and p.Y ~= nil then return p.X, p.Y end
+    local ok, m = pcall(function() return game:GetService("UserInputService"):GetMouseLocation() end)
+    if ok and m and m.X ~= nil and m.Y ~= nil then return m.X, m.Y end
+    return 0, 0
+end
+local function hitTest(o, px, py)
+    if not o then return false end
+    local ok, parented = pcall(function() return o.Parent ~= nil end)
+    if not ok or not parented then return false end
+    local ok2, a, sz = pcall(function() return o.AbsolutePosition, o.AbsoluteSize end)
+    if not ok2 or not a or not sz then return false end
+    return px >= a.X - 2 and px <= a.X + sz.X + 2
+        and py >= a.Y - 2 and py <= a.Y + sz.Y + 2
+end
 local function connect(signal, fn)
     if not signal then return end
     pcall(function() signal:Connect(fn) end)
@@ -1160,8 +1217,38 @@ function Axiom.CreateWindow(opts)
                     end
                 end
             end
-            local function openMenu() menu.Visible = true; fade(menu, 0, 0.18) end
-            local function closeMenu() fade(menu, 1, 0.18, function() menu.Visible = false end) end
+            local menuOpen = false
+            local outsideConn = nil
+            local function closeMenu()
+                if not menuOpen then return end
+                menuOpen = false
+                if outsideConn then pcall(function() outsideConn:Disconnect() end); outsideConn = nil end
+                fade(menu, 1, 0.18, function() if not menuOpen then menu.Visible = false end end)
+            end
+            local function openMenu()
+                if menuOpen then return end
+                -- 关闭同一窗口内其它已展开的下拉/调色面板，避免多个菜单叠加
+                pcall(function()
+                    for _, fn in ipairs(self._closePopups or {}) do if fn ~= closeMenu then fn() end end
+                end)
+                menuOpen = true
+                menu.Visible = true
+                fade(menu, 0, 0.18)
+                -- 点击空白自动收起：菜单展开期间监听全局按下，命中区域外即关闭
+                pcall(function()
+                    local uis = game:GetService("UserInputService")
+                    if not uis then return end
+                    outsideConn = uis.InputBegan:Connect(function(input)
+                        if not menuOpen then return end
+                        local t = input and input.UserInputType
+                        if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+                        local px, py = inputPoint(input)
+                        if not hitTest(cap, px, py) and not hitTest(menu, px, py) then closeMenu() end
+                    end)
+                end)
+            end
+            self._closePopups = self._closePopups or {}
+            table.insert(self._closePopups, closeMenu)
             for i, opt in ipairs(options) do
                 local rb = inst("TextButton", scroller, { Size = UDim2.new(1, -8, 0, 22),
                     Position = UDim2.fromOffset(4, 4 + (i - 1) * 26), BackgroundColor3 = C.Row,
@@ -1202,45 +1289,187 @@ function Axiom.CreateWindow(opts)
                 selected = {}; refreshChecks(); cur.Text = display(); obj.Value = multi and {} or nil
             end
         elseif kind == "ColorPicker" then
-            local cur = o.Default or C.Accent
-            local sw = inst("TextButton", host, { Size = UDim2.fromOffset(42, 24),
-                Position = UDim2.fromOffset(rx - 42, y + 7), BackgroundColor3 = cur,
+            -- 照抄 AsLab 的完整 HSV 取色器：SV 面板 + 色相条 + 预览 + HEX + 独占拖动会话
+            local def = isColor3(o.Default) and o.Default or Color3.fromRGB(255, 96, 96)
+            local h, sat, val = colorToHSV(def)
+
+            -- 行内色块（显示当前色 + HEX 文本 + 黑色描边文字）
+            local sw = inst("TextButton", host, { Size = UDim2.fromOffset(110, 24),
+                Position = UDim2.fromOffset(rx - 110, y + 7), BackgroundColor3 = def,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(sw, 6); stroke(sw, C.Line, 1, 0)
-            local palette = inst("CanvasGroup", main, { Name = "ColorPalette", Size = UDim2.fromOffset(150, 36),
-                Position = UDim2.fromOffset(176 + rx - 150, 34 + y + 36), BackgroundColor3 = C.Panel,
-                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14 })
-            corner(palette, 8); stroke(palette, C.Line, 1, 0)
-            local function openPalette() palette.Visible = true; fade(palette, 0, 0.18) end
-            local function closePalette() fade(palette, 1, 0.18, function() palette.Visible = false end) end
-            local function tweenSwatch(target)
-                local done = false
+            local swlbl = label(sw, "", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+            swlbl.Size = UDim2.fromScale(1, 1); swlbl.ZIndex = 4
+            local lstroke = stroke(swlbl, Color3.new(0, 0, 0), 1, 0.35)
+
+            -- 居中取色面板（挂在 main 上，覆盖窗口中央）
+            local pw, ph = 210, 158
+            local panel = inst("CanvasGroup", main, { Name = "ColorPalette", Size = UDim2.fromOffset(pw, ph),
+                Position = UDim2.new(0.5, -pw / 2, 0.5, -ph / 2), BackgroundColor3 = Color3.fromRGB(20, 20, 26),
+                BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 40 })
+            corner(panel, 12); stroke(panel, C.Border, 1, 0.4)
+            panel.ClipsDescendants = true
+            self._colorPanels = self._colorPanels or {}
+            table.insert(self._colorPanels, panel)
+
+            local pad = 10
+            local svW, svH = pw - pad * 2, 90
+            -- SV 板：底层纯色随色相，叠加白色横向渐变 + 黑色纵向渐变
+            local sv = inst("Frame", panel, { Name = "SV", Size = UDim2.fromOffset(svW, svH),
+                Position = UDim2.fromOffset(pad, pad), BackgroundColor3 = hsvToColor(h, 1, 1),
+                BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 41 })
+            corner(sv, 6)
+            local white = inst("Frame", sv, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
+                BorderSizePixel = 0, ZIndex = 41 })
+            inst("UIGradient", white, { Rotation = 0,
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) }) })
+            local black = inst("Frame", sv, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+                BorderSizePixel = 0, ZIndex = 41 })
+            inst("UIGradient", black, { Rotation = 90,
+                Transparency = NumberSequence.new({
+                    NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }) })
+            local cursor = inst("Frame", sv, { Name = "SVCursor", Size = UDim2.fromOffset(10, 10),
+                BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 43 })
+            inst("UICorner", cursor, { CornerRadius = UDim.new(1, 0) })
+            stroke(cursor, Color3.new(1, 1, 1), 1.5, 0)
+
+            -- 色相条：彩虹渐变 + 白色竖条游标
+            local hueY = pad + svH + 8
+            local hue = inst("Frame", panel, { Name = "Hue", Size = UDim2.fromOffset(svW, 12),
+                Position = UDim2.fromOffset(pad, hueY), BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 41 })
+            corner(hue, 6)
+            inst("UIGradient", hue, { Rotation = 0, Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+                ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+                ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+                ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0, 255, 255)),
+                ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+                ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)) }) })
+            local hcur = inst("Frame", hue, { Name = "HueCursor", Size = UDim2.fromOffset(4, 16),
+                BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 43 })
+            corner(hcur, 2)
+
+            -- 底部预览块 + HEX 文本
+            local prev = inst("Frame", panel, { Name = "Preview", Size = UDim2.fromOffset(22, 22),
+                Position = UDim2.fromOffset(pad, ph - pad - 22), BorderSizePixel = 0, ZIndex = 41 })
+            corner(prev, 5); stroke(prev, C.Border, 1, 0.4)
+            local hexLabel = label(panel, "", 12, C.Text, false, Enum.TextXAlignment.Left)
+            hexLabel.Size = UDim2.new(1, -pad * 2 - 34, 0, 22)
+            hexLabel.Position = UDim2.fromOffset(pad + 30, ph - pad - 22); hexLabel.ZIndex = 41
+
+            local function toHex(c)
+                return string.format("#%02X%02X%02X",
+                    math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+            end
+            local function refresh(fire)
+                local c = hsvToColor(h, sat, val)
+                local hex = toHex(c)
+                sw.BackgroundColor3 = c
+                swlbl.Text = hex
+                prev.BackgroundColor3 = c
+                hexLabel.Text = hex
+                sv.BackgroundColor3 = hsvToColor(h, 1, 1)
+                cursor.Position = UDim2.new(sat, -5, 1 - val, -5)
+                hcur.Position = UDim2.new(h, -2, 0.5, -8)
+                obj.Value = c
+                if fire then emit(obj, c) end
+            end
+
+            -- 独占式指针会话：SV 板与色相条共用一条拖动链路（照抄 AsLab 防残留）
+            local function releaseGrab()
+                local g = self._colorGrab
+                if not g then return end
+                self._colorGrab = nil
+                for _, cn in ipairs(g.conns) do pcall(function() cn:Disconnect() end) end
+            end
+            self._releaseColorGrab = releaseGrab
+            local function grab(apply, initial)
+                releaseGrab()
+                local px, py = inputPoint(initial)
+                apply(px, py)
+                local session = { conns = {} }
                 pcall(function()
-                    local ts = game:GetService("TweenService")
-                    if not ts then return end
-                    local ti = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-                    ts:Create(sw, ti, { BackgroundColor3 = target }):Play()
-                    done = true
+                    local uis = game:GetService("UserInputService")
+                    if not uis then return end
+                    session.conns[1] = uis.InputChanged:Connect(function(i)
+                        if self._colorGrab ~= session then return end
+                        local t = i and i.UserInputType
+                        if t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch then
+                            local mx, my = inputPoint(i)
+                            apply(mx, my)
+                        end
+                    end)
+                    session.conns[2] = uis.InputEnded:Connect(function(i)
+                        if self._colorGrab ~= session then return end
+                        local t = i and i.UserInputType
+                        if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+                            releaseGrab()
+                        end
+                    end)
                 end)
-                if not done then pcall(function() sw.BackgroundColor3 = target end) end
+                self._colorGrab = session
             end
-            local swatches = { C.Accent, Color3.fromRGB(94, 234, 212), C.Green,
-                Color3.fromRGB(255, 189, 46), Color3.fromRGB(255, 95, 86), C.Text }
-            for i, col in ipairs(swatches) do
-                local b = inst("TextButton", palette, { Size = UDim2.fromOffset(18, 18),
-                    Position = UDim2.fromOffset(8 + (i - 1) * 23, 9), BackgroundColor3 = col,
-                    BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 15 })
-                corner(b, 5)
-                connect(b.MouseButton1Click, function()
-                    cur = col; tweenSwatch(cur); obj.Value = cur
-                    closePalette(); emit(obj, cur)
-                end)
+            local function setSV(px, py)
+                local okp, p, sz = pcall(function() return sv.AbsolutePosition, sv.AbsoluteSize end)
+                if not okp or not p or not sz then return end
+                sat = clamp((px - p.X) / math.max(1, sz.X), 0, 1)
+                val = 1 - clamp((py - p.Y) / math.max(1, sz.Y), 0, 1)
+                refresh(true)
             end
-            connect(sw.MouseButton1Click, function()
-                if palette.Visible then closePalette() else openPalette() end
+            local function setHue(px)
+                local okp, p, sz = pcall(function() return hue.AbsolutePosition, hue.AbsoluteSize end)
+                if not okp or not p or not sz then return end
+                h = clamp((px - p.X) / math.max(1, sz.X), 0, 1)
+                refresh(true)
+            end
+
+            -- 面板底层触摸拦截：点空白处不穿透；ZIndex 低于两块命中区
+            inst("TextButton", panel, { Name = "ColorPanelHit", Size = UDim2.fromScale(1, 1),
+                BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 42, Active = true })
+            local svHit = inst("TextButton", panel, { Name = "SVHit", Size = UDim2.fromOffset(svW, svH),
+                Position = UDim2.fromOffset(pad, pad), BackgroundTransparency = 1, Text = "",
+                AutoButtonColor = false, ZIndex = 45, Active = true })
+            connect(svHit.InputBegan, function(i)
+                local t = i and i.UserInputType
+                if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then grab(setSV, i) end
             end)
-            function obj:SetValue(v) cur = v or C.Accent; tweenSwatch(cur); obj.Value = cur end
-            function obj:Get() return cur end
+            local hueHit = inst("TextButton", panel, { Name = "HueHit", Size = UDim2.fromOffset(svW, 12),
+                Position = UDim2.fromOffset(pad, hueY), BackgroundTransparency = 1, Text = "",
+                AutoButtonColor = false, ZIndex = 45, Active = true })
+            connect(hueHit.InputBegan, function(i)
+                local t = i and i.UserInputType
+                if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then grab(setHue, i) end
+            end)
+
+            local function closePalette()
+                if not panel.Visible then return end
+                releaseGrab()
+                fade(panel, 1, 0.18, function() panel.Visible = false end)
+            end
+            local function openPalette()
+                pcall(function()
+                    for _, fn in ipairs(self._closePopups or {}) do if fn ~= closePalette then fn() end end
+                end)
+                panel.Visible = true
+                fade(panel, 0, 0.18)
+            end
+            self._closePopups = self._closePopups or {}
+            table.insert(self._closePopups, closePalette)
+            connect(sw.MouseButton1Click, function()
+                if panel.Visible then closePalette() else openPalette() end
+            end)
+
+            refresh(false)
+            function obj:Set(c)
+                if isColor3(c) then
+                    h, sat, val = colorToHSV(c)
+                    refresh(false)
+                end
+            end
+            obj.SetValue = obj.Set
+            function obj:Get() return hsvToColor(h, sat, val) end
         end
         function obj:Callback(fn) obj._cb = fn; return obj end
         return obj
