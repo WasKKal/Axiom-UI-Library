@@ -828,24 +828,40 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         Position = UDim2.fromOffset(24, 54), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
     local yCursor = 68
+    local function placeParagraph(host, tw, z, yy, title, text)
+        local th = estimateTextHeight(text, 12, tw)
+        local t = label(host, title, 14, C.Text, true)
+        t.Size = UDim2.fromOffset(tw, 20); t.Position = UDim2.fromOffset(24, yy); t.ZIndex = z
+        local d = label(host, text, 12, C.Sub)
+        d.Size = UDim2.fromOffset(tw, th); d.Position = UDim2.fromOffset(24, yy + 24)
+        d.TextWrapped = true; d.ZIndex = z
+        return d, th
+    end
     function self:AddLoginParagraph(o)
         o = o or {}
         local text = tostring(o.Text or "")
+        local title = o.Title or "Update"
         local tw = leftW - 48
-        local th = estimateTextHeight(text, 12, tw)
         local yy = yCursor
-        local t = label(left, o.Title or "Update", 14, C.Text, true)
-        t.Size = UDim2.fromOffset(tw, 20); t.Position = UDim2.fromOffset(24, yy); t.ZIndex = 27
-        local d = label(left, text, 12, C.Sub)
-        d.Size = UDim2.fromOffset(tw, th); d.Position = UDim2.fromOffset(24, yy + 24)
-        d.TextWrapped = true; d.ZIndex = 27
+        local d, th = placeParagraph(left, tw, 27, yy, title, text)
         yCursor = yy + 24 + th + 16
         left.CanvasSize = UDim2.new(0, 0, 0, math.max(bodyH, yCursor + 20))
+        local sd = nil
+        if self._settingsLeft then
+            local sy = self._settingsY or 68
+            sd = placeParagraph(self._settingsLeft, tw, 42, sy, title, text)
+            self._settingsY = sy + 24 + th + 16
+            self._settingsLeft.CanvasSize = UDim2.new(0, 0, 0, math.max(bodyH, self._settingsY + 20))
+        end
         local obj = { _win = self }
         function obj:SetText(v)
             local nv = tostring(v or "")
             d.Text = nv
             d.Size = UDim2.fromOffset(tw, estimateTextHeight(nv, 12, tw))
+            if sd then
+                sd.Text = nv
+                sd.Size = UDim2.fromOffset(tw, estimateTextHeight(nv, 12, tw))
+            end
         end
         function obj:Get() return d.Text end
         return obj
@@ -960,6 +976,127 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         d.Visible = false; d.Active = false
         pcall(function() d.BackgroundTransparency = 1 end)
     end
+    local sLayer = inst("CanvasGroup", main, { Name = "SettingsLayer",
+        Size = UDim2.fromOffset(W, bodyH), Position = UDim2.fromOffset(0, 34),
+        BackgroundColor3 = C.Bg, BorderSizePixel = 0, GroupTransparency = 1,
+        Visible = false, ZIndex = 28 })
+    self._settingsLayer = sLayer
+    local sLeft = inst("ScrollingFrame", sLayer, { Name = "SettingsLog", Size = UDim2.fromOffset(leftW, bodyH),
+        Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 29,
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
+        CanvasSize = UDim2.new(0, 0, 0, bodyH), ClipsDescendants = false })
+    self._settingsLeft = sLeft
+    self._settingsY = 68
+    local sBig = label(sLeft, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
+    sBig.Size = UDim2.fromOffset(leftW - 40, 32); sBig.Position = UDim2.fromOffset(24, 16); sBig.ZIndex = 30
+    inst("Frame", sLeft, { Size = UDim2.fromOffset(leftW - 48, 1), Position = UDim2.fromOffset(24, 54),
+        BackgroundColor3 = C.Line, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 30 })
+    local sRight = inst("Frame", sLayer, { Name = "SettingsArea", Size = UDim2.fromOffset(rightW, bodyH),
+        Position = UDim2.fromOffset(leftW, 0), BackgroundColor3 = C.Side, BorderSizePixel = 0, ZIndex = 29 })
+    inst("Frame", sRight, { Size = UDim2.fromOffset(1, bodyH), Position = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = C.Line, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 30 })
+    local av2 = 54
+    local avatar2 = inst("ImageLabel", sRight, { Name = "SettingsAvatar", Size = UDim2.fromOffset(av2, av2),
+        Position = UDim2.fromOffset(16, 16), BackgroundColor3 = C.Row, BorderSizePixel = 0, ZIndex = 30 })
+    corner(avatar2, av2 / 2); stroke(avatar2, C.Accent, 1.2, 0.4)
+    local name2 = "Player"
+    pcall(function()
+        local Players = game:GetService("Players")
+        local lp = Players and Players.LocalPlayer
+        if lp then
+            name2 = tostring(lp.Name)
+            if type(Players.GetUserThumbnailAsync) == "function" then
+                avatar2.Image = Players:GetUserThumbnailAsync(lp.UserId,
+                    Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+            end
+        end
+    end)
+    local uname2 = label(sRight, name2, 13, C.Text, true, Enum.TextXAlignment.Left)
+    uname2.Name = "SettingsName"; uname2.Size = UDim2.fromOffset(rightW - av2 - 26, 18)
+    uname2.Position = UDim2.fromOffset(16 + av2 + 8, 18); uname2.ZIndex = 30
+    local bday = "账号生日: 未知"
+    pcall(function()
+        local Players = game:GetService("Players")
+        local lp = Players and Players.LocalPlayer
+        local age = lp and lp.AccountAge
+        if type(age) == "number" and type(os) == "table" and type(os.time) == "function" and type(os.date) == "function" then
+            local created = os.time() - math.floor(age) * 86400
+            bday = "账号生日: " .. tostring(os.date("%Y-%m-%d", created))
+        elseif type(age) == "number" then
+            bday = "账号年龄: " .. tostring(math.floor(age)) .. " 天"
+        end
+    end)
+    local bdayTx = label(sRight, bday, 10, C.Sub, false, Enum.TextXAlignment.Left)
+    bdayTx.Name = "SettingsBirthday"; bdayTx.Size = UDim2.fromOffset(rightW - av2 - 26, 16)
+    bdayTx.Position = UDim2.fromOffset(16 + av2 + 8, 38); bdayTx.ZIndex = 30
+    local secTitle = label(sRight, "UI设置", 14, C.Text, true, Enum.TextXAlignment.Left)
+    secTitle.Name = "SettingsSection"; secTitle.Size = UDim2.fromOffset(rightW - 32, 22)
+    secTitle.Position = UDim2.fromOffset(16, av2 + 30); secTitle.ZIndex = 30
+    inst("Frame", sRight, { Size = UDim2.fromOffset(rightW - 32, 1), Position = UDim2.fromOffset(16, av2 + 54),
+        BackgroundColor3 = C.Line, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 30 })
+    local minPct, maxPct, pct = 60, 160, 100
+    local scaleCap = label(sRight, "窗口比例", 11, C.Sub, false, Enum.TextXAlignment.Left)
+    scaleCap.Size = UDim2.fromOffset(90, 18); scaleCap.Position = UDim2.fromOffset(16, av2 + 64); scaleCap.ZIndex = 30
+    local pctTx = label(sRight, "100%", 11, C.Accent, true, Enum.TextXAlignment.Right)
+    pctTx.Name = "ScaleLabel"; pctTx.Size = UDim2.fromOffset(46, 18)
+    pctTx.Position = UDim2.fromOffset(rightW - 62, av2 + 64); pctTx.ZIndex = 30
+    local strack = inst("TextButton", sRight, { Name = "ScaleSlider", Size = UDim2.fromOffset(rightW - 32, 6),
+        Position = UDim2.fromOffset(16, av2 + 86), BackgroundColor3 = C.Track,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 30 })
+    corner(strack, 3)
+    local sfill = inst("Frame", strack, { Size = UDim2.fromScale((pct - minPct) / (maxPct - minPct), 1),
+        BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 31 })
+    corner(sfill, 3)
+    local sdrag = false
+    local function sfrom(input)
+        local okX, ax = pcall(function() return input.Position.X end)
+        if not okX or not ax then return end
+        local okA, rel = pcall(function() return strack.AbsolutePosition.X end)
+        local okS, wid = pcall(function() return strack.AbsoluteSize.X end)
+        if okA and okS and wid and wid > 0 then
+            pct = math.floor(minPct + clamp((ax - rel) / wid, 0, 1) * (maxPct - minPct))
+            sfill.Size = UDim2.fromScale(clamp((pct - minPct) / (maxPct - minPct), 0.02, 1), 1)
+            pctTx.Text = tostring(pct) .. "%"
+        end
+    end
+    connect(strack.InputBegan, function(input) sdrag = true; sfrom(input) end)
+    connect(strack.InputChanged, function(input) if sdrag then sfrom(input) end end)
+    connect(strack.InputEnded, function() sdrag = false end)
+    self._getSettingsScale = function() return pct / 100 end
+    local applyBtn = inst("TextButton", sRight, { Name = "ApplyUi", Size = UDim2.fromOffset(rightW - 32, 36),
+        Position = UDim2.fromOffset(16, bodyH - 48), BackgroundColor3 = C.Accent,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 30 })
+    corner(applyBtn, 8)
+    local afill = inst("Frame", applyBtn, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Accent,
+        BorderSizePixel = 0, ZIndex = 30 })
+    corner(afill, 8); grad(afill, C.Accent, Color3.new(1, 1, 1), 0)
+    local atx = label(applyBtn, "应用修改", 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+    atx.Name = "ApplyUiText"; atx.Size = UDim2.fromScale(1, 1); atx.ZIndex = 31
+    stroke(applyBtn, C.AccentW, 1.2, 0.25)
+    connect(applyBtn.MouseButton1Click, function()
+        local k = (self._baseScale or 0.65) * (pct / 100)
+        local newPos = UDim2.new(0.5, -(W * k) / 2, 0.5, -(H * k) / 2)
+        tweenEx(self._mainScale, { Scale = k }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        tweenEx(main, { Position = newPos }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        if type(Axiom.Notify) == "function" then
+            pcall(function() Axiom.Notify({ Title = "设置", Text = "你的设定已保存!", Type = "success", Duration = 2.5 }) end)
+        end
+    end)
+    local settingsOpen = false
+    function self:_toggleSettingsPanel()
+        if self._isLogin then return end
+        settingsOpen = not settingsOpen
+        if settingsOpen then
+            fade(contentLayer, 1, 0.25, function() contentLayer.Visible = false end)
+            sLayer.Visible = true; sLayer.GroupTransparency = 1
+            fade(sLayer, 0, 0.3)
+        else
+            fade(sLayer, 1, 0.24, function() sLayer.Visible = false end)
+            contentLayer.Visible = true; contentLayer.GroupTransparency = 1
+            fade(contentLayer, 0, 0.3)
+        end
+    end
     return self
 end
 function Axiom.CreateWindow(opts)
@@ -993,7 +1130,10 @@ function Axiom.CreateWindow(opts)
     local main = inst("CanvasGroup", gui, { Name = "Main", Size = UDim2.fromOffset(W, H),
         Position = UDim2.new(0.5, -(W*SCALE)/2, 0.5, -(H*SCALE)/2), BackgroundColor3 = C.Bg,
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
-    inst("UIScale", main, { Scale = SCALE })
+    local mainScale = inst("UIScale", main, { Scale = SCALE })
+    self._mainScale = mainScale
+    self._baseScale = SCALE
+    self._baseW, self._baseH = W, H
     corner(main, 12)
     local mainStroke = stroke(main, C.Border, 1.5, 1)  
     if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
@@ -1021,7 +1161,17 @@ function Axiom.CreateWindow(opts)
             connect(d.MouseButton1Click, function() self:_openCloseConfirm() end)
         elseif i == 2 then
             connect(d.MouseButton1Click, function() self:_minimize() end)
+        else
+            connect(d.MouseButton1Click, function()
+                if type(self._toggleSettingsPanel) == "function" then self:_toggleSettingsPanel() end
+            end)
         end
+        local baseCol = col
+        local darkCol = Color3.new(col.R * 0.55, col.G * 0.55, col.B * 0.55)
+        connect(d.MouseButton1Down, function() tweenProp(d, { BackgroundColor3 = darkCol }, 0.08) end)
+        local function lighten() tweenProp(d, { BackgroundColor3 = baseCol }, 0.12) end
+        connect(d.MouseButton1Up, lighten)
+        connect(d.MouseLeave, lighten)
     end
     local bt = label(bar, opts.Title or "AXIOM", 12, C.Sub, false, Enum.TextXAlignment.Center)
     bt.Size = UDim2.fromOffset(300, 20); bt.Position = UDim2.fromOffset(160, 7); bt.ZIndex = 4
@@ -1226,9 +1376,6 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 44, y + 8), BackgroundColor3 = on and C.Accent or C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
-            local shine = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
-                BackgroundTransparency = 0.52, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
-            corner(shine, 12); whiteSheen(shine, 0, 0.42, 0.2)
             local kn = inst("Frame", tr, { Size = UDim2.fromOffset(18, 18),
                 Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0),
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
@@ -1236,7 +1383,6 @@ function Axiom.CreateWindow(opts)
             local function refresh()
                 local bg = on and C.Accent or C.Track
                 local kp = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
-                shine.Visible = on
                 local done = false
                 pcall(function()
                     local ts = game:GetService("TweenService")
