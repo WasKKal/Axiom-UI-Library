@@ -24,6 +24,38 @@ local function httpGet(url)
     end)
     return ok and res or nil
 end
+local function httpRequest(o)
+    o = o or {}
+    local url = o.Url or o.url
+    if type(url) ~= "string" or #url == 0 then return nil end
+    local req = { Url = url, Method = o.Method or "GET", Headers = o.Headers, Body = o.Body }
+    local ok, res = pcall(function()
+        if type(request) == "function" then return request(req) end
+        if type(http_request) == "function" then return http_request(req) end
+        if type(syn) == "table" and type(syn.request) == "function" then return syn.request(req) end
+        if type(_G) == "table" and type(_G.httpRequest) == "function" then return _G.httpRequest(req) end
+        return nil
+    end)
+    if not ok or type(res) ~= "table" then return nil end
+    return res
+end
+local function jsonEncode(v)
+    local ok, s = pcall(function()
+        local HS = game:GetService("HttpService")
+        return HS:JSONEncode(v)
+    end)
+    if ok and type(s) == "string" then return s end
+    return nil
+end
+local function jsonDecode(s)
+    if type(s) ~= "string" or #s == 0 then return nil end
+    local ok, v = pcall(function()
+        local HS = game:GetService("HttpService")
+        return HS:JSONDecode(s)
+    end)
+    if ok and type(v) == "table" then return v end
+    return nil
+end
 local function hasFs()
     return type(isfile) == "function" and type(readfile) == "function"
         and type(writefile) == "function" and type(makefolder) == "function"
@@ -917,19 +949,23 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     self._startLoginFlow = startFlow
     self._restoreLoginFlow = restoreFlow
     startFlow()
-    local left = inst("ScrollingFrame", layer, { Size = UDim2.fromOffset(leftW, bodyH),
-        Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
+    local headerH = 68
+    local header = inst("Frame", layer, { Name = "LoginHeader", Size = UDim2.fromOffset(leftW, headerH),
+        Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Bg, BorderSizePixel = 0, ZIndex = 26 })
+    local big = label(header, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
+    big.Name = "LoginTitle"; big.Size = UDim2.fromOffset(leftW - 40, 32)
+    big.Position = UDim2.fromOffset(24, 16); big.ZIndex = 27
+    inst("Frame", header, { Name = "LoginTitleLine", Size = UDim2.fromOffset(leftW - 48, 1),
+        Position = UDim2.fromOffset(24, 54), BackgroundColor3 = C.Line,
+        BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
+    local left = inst("ScrollingFrame", layer, { Name = "LoginLog", Size = UDim2.fromOffset(leftW, bodyH - headerH),
+        Position = UDim2.fromOffset(0, headerH), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 26,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
         HorizontalScrollBarInset = Enum.ScrollBarInset.None,
         VerticalScrollBarInset = Enum.ScrollBarInset.None,
-        CanvasSize = UDim2.new(0, 0, 0, bodyH), ClipsDescendants = false })
-    local big = label(left, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
-    big.Size = UDim2.fromOffset(leftW - 40, 32); big.Position = UDim2.fromOffset(24, 16); big.ZIndex = 27
-    inst("Frame", left, { Size = UDim2.fromOffset(leftW - 48, 1),
-        Position = UDim2.fromOffset(24, 54), BackgroundColor3 = C.Line,
-        BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
-    local yCursor = 68
+        CanvasSize = UDim2.new(0, 0, 0, bodyH - headerH), ClipsDescendants = true })
+    local yCursor = 16
     local function placeParagraph(host, tw, z, yy, title, text)
         local th = estimateTextHeight(text, 12, tw)
         local t = label(host, title, 14, C.Text, true)
@@ -947,7 +983,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         local yy = yCursor
         local d, th = placeParagraph(left, tw, 27, yy, title, text)
         yCursor = yy + 24 + th + 16
-        left.CanvasSize = UDim2.new(0, 0, 0, math.max(bodyH, yCursor + 20))
+        left.CanvasSize = UDim2.new(0, 0, 0, math.max(bodyH - headerH, yCursor + 20))
         local sd = nil
         if self._settingsLeft then
             local sy = self._settingsY or 68
@@ -975,7 +1011,9 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
     local avSize = 96
-    local blockH = avSize + 12 + 26 + 18 + 40   
+    local keySystem = opts.KeySystem == true
+    local keyH = 38
+    local blockH = avSize + 12 + 26 + (keySystem and (12 + keyH + 10) or 18) + 40
     local baseY = (bodyH - blockH) / 2
     local avatar = inst("ImageLabel", right, { Name = "Avatar", Size = UDim2.fromOffset(avSize, avSize),
         Position = UDim2.fromOffset((rightW - avSize) / 2, baseY), BackgroundColor3 = C.Row,
@@ -1010,8 +1048,51 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         connect(b.MouseButton1Click, function() if type(cb) == "function" then pcall(cb) end end)
         return b, tx
     end
-    local by = baseY + avSize + 12 + 26 + 18
-    local loadBtn, loadTx = loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, nil,
+    local keyBox, keyInput, keyIconBtn, keyIconImg, keyStroke
+    local keyTop = baseY + avSize + 12 + 26 + 12
+    if keySystem then
+        keyBox = inst("Frame", right, { Name = "KeyField", Size = UDim2.fromOffset(rightW - 36, keyH),
+            Position = UDim2.fromOffset(18, keyTop), BackgroundColor3 = C.Row,
+            BorderSizePixel = 0, ZIndex = 27 })
+        corner(keyBox, 8)
+        keyStroke = stroke(keyBox, C.Line, 1, 0.2)
+        keyIconBtn = inst("TextButton", keyBox, { Name = "KeyIcon", Size = UDim2.fromOffset(34, keyH),
+            Position = UDim2.fromOffset(2, 0), BackgroundTransparency = 1, Text = "",
+            AutoButtonColor = false, ZIndex = 28 })
+        keyIconImg = inst("ImageLabel", keyIconBtn, { Name = "KeyIconImage", Size = UDim2.fromOffset(15, 15),
+            Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundTransparency = 1, ZIndex = 28 })
+        applyIcon(keyIconImg, opts.KeyIcon or "user-key", C.Sub)
+        keyInput = inst("TextBox", keyBox, { Name = "KeyInput", Size = UDim2.new(1, -44, 1, 0),
+            Position = UDim2.fromOffset(40, 0), BackgroundTransparency = 1,
+            Text = tostring(opts.KeyDefault or ""),
+            PlaceholderText = tostring(opts.KeyPlaceholder or "输入密钥"),
+            PlaceholderColor3 = C.Sub, TextColor3 = C.Text, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+            ClipsDescendants = true, ZIndex = 28 })
+        connect(keyIconBtn.MouseButton1Click, function()
+            local cb = opts.OnKeyIconClick or opts.KeyIconCallback
+            if type(cb) == "function" then pcall(cb, self, keyInput, keyBox) end
+        end)
+        connect(keyIconBtn.MouseEnter, function()
+            if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Accent }, 0.14) end
+        end)
+        connect(keyIconBtn.MouseLeave, function()
+            if self._keyError then return end
+            if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Sub }, 0.14) end
+        end)
+        connect(keyInput.Focused, function()
+            if keyStroke then tweenProp(keyStroke, { Color = C.Accent, Transparency = 0 }, 0.14) end
+        end)
+        connect(keyInput.FocusLost, function()
+            if keyStroke and not self._keyError then
+                tweenProp(keyStroke, { Color = C.Line, Transparency = 0.2 }, 0.14)
+            end
+        end)
+    end
+    local by = keySystem and (keyTop + keyH + 10) or (baseY + avSize + 12 + 26 + 18)
+    local loadLabel = keySystem and "验证密钥并载入" or "加载脚本"
+    local loadBtn, loadTx = loginBtn("LoadScript", loadLabel, by, C.Accent, C.Accent2, nil,
         { C.AccentW, Color3.new(1, 1, 1), 90 })
     stroke(loadBtn, C.AccentW, 1.5, 0.25)                       
     local loadFill = nil
@@ -1072,9 +1153,11 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end
         later(0.06, function()
             deepFade(left, 0.9, 0.3)
+            deepFade(header, 0.9, 0.3)
             fadeAny(right, 1, 0.3)
             deepFade(uname, 0.6, 0.3)
             deepFade(loadBtn, 0.55, 0.3)
+            if keyBox then deepFade(keyBox, 0.6, 0.3) end
             if rightDivider then tweenProp(rightDivider, { BackgroundTransparency = 1 }, 0.3) end
             tweenProp(brand, { TextTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, -46) }, 0.32)
             tweenProp(under, { BackgroundTransparency = 0, Size = UDim2.fromOffset(128, 2) }, 0.32)
@@ -1091,6 +1174,8 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             deepFade(uname, 1, 0.18)
             deepFade(loadBtn, 1, 0.18)
             deepFade(left, 1, 0.2)
+            deepFade(header, 1, 0.2)
+            if keyBox then deepFade(keyBox, 1, 0.18) end
         end)
         later(0.72, function()
             for i = 1, 3 do
@@ -1117,14 +1202,266 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end)
     end
     self._loginSequence = loginSequence
-    connect(loadBtn.MouseButton1Click, function()
-        if self._loginLoading then return end
-        self._loginLoading = true
-        loadBtn.Active = false
+    local ERR = Color3.fromRGB(255, 96, 96)
+    local keyCfg = type(opts.KeyAPI) == "table" and opts.KeyAPI or nil
+    local LUARMOR_MSG = {
+        KEY_EXPIRED = "密钥已过期",
+        KEY_BANNED = "密钥已被封禁",
+        KEY_HWID_LOCKED = "密钥已绑定其他设备",
+        KEY_INCORRECT = "密钥不存在",
+        KEY_INVALID = "密钥格式无效",
+        SCRIPT_ID_INCORRECT = "脚本 ID 配置错误",
+        SCRIPT_ID_INVALID = "脚本 ID 格式错误",
+        INVALID_EXECUTOR = "执行器不受支持",
+        SECURITY_ERROR = "请求校验失败",
+        TIME_ERROR = "本地时间异常",
+    }
+    local function urlEncode(s)
+        local ok, v = pcall(function()
+            local HS = game:GetService("HttpService")
+            return HS:UrlEncode(tostring(s or ""))
+        end)
+        if ok and type(v) == "string" then return v end
+        return (tostring(s or ""):gsub("[^%w%-%._~]", function(c)
+            return string.format("%%%02X", string.byte(c))
+        end))
+    end
+    local function luarmorCheck(key, cb)
+        local cfg = keyCfg or {}
+        local scriptId = cfg.ScriptId or cfg.script_id
+        if type(scriptId) ~= "string" or #scriptId == 0 then
+            cb(false, "缺少 ScriptId")
+            return
+        end
+        local libUrl = cfg.LibraryUrl or "https://sdkapi-public.luarmor.net/library.lua"
+        local okRun, result = pcall(function()
+            local src = httpGet(libUrl)
+            if type(src) ~= "string" or #src < 100 then return nil end
+            if type(loadstring) ~= "function" then return nil end
+            local fn = loadstring(src)
+            if type(fn) ~= "function" then return nil end
+            local api = fn()
+            if type(api) ~= "table" then return nil end
+            api.script_id = scriptId
+            return { api = api, status = api.check_key(key) }
+        end)
+        if not okRun or type(result) ~= "table" then
+            cb(false, "验证服务不可用")
+            return
+        end
+        local status = type(result.status) == "table" and result.status or {}
+        local code = tostring(status.code or "")
+        if code == "KEY_VALID" then
+            if cfg.LoadScript == true then
+                pcall(function()
+                    _G.script_key = key
+                    local env = getfenv(0)
+                    if type(env) == "table" then env.script_key = key end
+                end)
+                pcall(function() result.api.load_script() end)
+            end
+            cb(true, "验证成功", status.data)
+        else
+            cb(false, LUARMOR_MSG[code] or tostring(status.message or "密钥无效"), status.data)
+        end
+    end
+    local function httpCheck(key, cb)
+        local cfg = keyCfg or {}
+        local url = cfg.Url
+        if type(url) == "function" then
+            local ok, v = pcall(url, key, self)
+            url = ok and v or nil
+        end
+        if type(url) ~= "string" or #url == 0 then
+            cb(false, "未配置验证接口")
+            return
+        end
+        local method = string.upper(tostring(cfg.Method or "POST"))
+        local headers = type(cfg.Headers) == "table" and cfg.Headers or { ["Content-Type"] = "application/json" }
+        local payload = { key = key }
+        if type(cfg.Body) == "function" then
+            local ok, v = pcall(cfg.Body, key, self)
+            if ok and type(v) == "table" then payload = v end
+        elseif type(cfg.Body) == "table" then
+            payload = cfg.Body
+        end
+        local finalUrl = url
+        local body = nil
+        if method == "GET" then
+            local sep = url:find("?", 1, true) and "&" or "?"
+            finalUrl = url .. sep .. "key=" .. urlEncode(key)
+            if type(cfg.Query) == "function" then
+                local ok, q = pcall(cfg.Query, key, self)
+                if ok and type(q) == "table" then
+                    for k, v in pairs(q) do
+                        finalUrl = finalUrl .. "&" .. urlEncode(k) .. "=" .. urlEncode(v)
+                    end
+                end
+            end
+        else
+            body = jsonEncode(payload)
+        end
+        local res = httpRequest({ Url = finalUrl, Method = method, Headers = headers, Body = body })
+        if type(res) ~= "table" then
+            cb(false, "网络请求失败")
+            return
+        end
+        local code = tonumber(res.StatusCode or res.status or res.Status or 0) or 0
+        local raw = res.Body or res.body or ""
+        local data = jsonDecode(raw)
+        local okv, msg = nil, nil
+        if type(cfg.Check) == "function" then
+            local a, b, c = pcall(cfg.Check, data, raw, code, self)
+            if a then okv, msg = b, c end
+        end
+        if okv == nil then
+            okv = code >= 200 and code < 300
+            if type(data) == "table" then
+                if data.success == false or data.ok == false then okv = false end
+                if data.banned == 1 or data.banned == true or data.status == "banned" then okv = false end
+                if data.valid == true or data.success == true or data.ok == true
+                    or data.status == "active" or data.status == "valid" then okv = true end
+                msg = data.message or data.msg or data.error
+            end
+        end
+        if msg == nil and type(raw) == "string" and #raw > 0 then
+            msg = raw:match('"message"%s*:%s*"([^"]*)"') or raw:match('"msg"%s*:%s*"([^"]*)"')
+                or raw:match('"error"%s*:%s*"([^"]*)"')
+        end
+        cb(okv == true, msg or (okv and "验证成功" or "密钥无效"), data)
+    end
+    local function runKeyCheck(key, cb)
+        local fn = opts.KeyCheck
+        if type(fn) ~= "function" and type(opts.KeyAPI) == "function" then fn = opts.KeyAPI end
+        if type(fn) == "function" then
+            local settled = false
+            local function resolve(ok, msg, data)
+                if settled then return end
+                settled = true
+                cb(ok == true, msg, data)
+            end
+            local ok, ret, msg, data = pcall(fn, key, resolve, self)
+            if not ok then
+                if not settled then resolve(false, "验证失败: " .. tostring(ret)) end
+            elseif not settled and ret ~= nil then
+                resolve(ret == true, msg, data)
+            end
+            later(20, function() if not settled then resolve(false, "验证超时") end end)
+            return
+        end
+        local provider = keyCfg and tostring(keyCfg.Provider or "") or ""
+        if provider == "Luarmor" or provider == "luarmor" then
+            luarmorCheck(key, cb)
+            return
+        end
+        if keyCfg and keyCfg.Url then
+            httpCheck(key, cb)
+            return
+        end
+        cb(true, "未配置验证", nil)
+    end
+    local function keyShake()
+        if not keyBox then return end
+        local x0 = 18
+        for i = 1, 4 do
+            local d = (i % 2 == 1) and 5 or -5
+            later((i - 1) * 0.05, function()
+                pcall(function() keyBox.Position = UDim2.fromOffset(x0 + d, keyTop) end)
+            end)
+        end
+        later(0.22, function()
+            pcall(function() keyBox.Position = UDim2.fromOffset(x0, keyTop) end)
+        end)
+    end
+    local function showKeyError(msg)
+        if not keySystem then return end
+        self._keyError = true
+        self._keyErrSeq = (self._keyErrSeq or 0) + 1
+        local seq = self._keyErrSeq
+        if keyStroke then
+            pcall(function() keyStroke.Color = ERR; keyStroke.Transparency = 0 end)
+        end
+        if keyIconImg then pcall(function() keyIconImg.ImageColor3 = ERR end) end
+        if loadTx then pcall(function() loadTx.Text = tostring(msg or "密钥无效") end) end
+        if loadFill and loadFill.UIGradient then
+            pcall(function()
+                loadFill.UIGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(148, 48, 56)),
+                    ColorSequenceKeypoint.new(1, Color3.fromRGB(196, 68, 74)) })
+            end)
+        end
+        keyShake()
+        later(2, function()
+            if self._keyErrSeq ~= seq or self._loginLoading then return end
+            self._keyError = false
+            local focused = false
+            pcall(function() focused = keyInput.IsFocused == true end)
+            if keyStroke then
+                tweenProp(keyStroke, { Color = focused and C.Accent or C.Line,
+                    Transparency = focused and 0 or 0.2 }, 0.2)
+            end
+            if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Sub }, 0.2) end
+            if loadTx then pcall(function() loadTx.Text = loadLabel end) end
+            if loadFill and loadFill.UIGradient then
+                pcall(function()
+                    loadFill.UIGradient.Color = ColorSequence.new({
+                        ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 122, 235)),
+                        ColorSequenceKeypoint.new(0.5, C.Accent),
+                        ColorSequenceKeypoint.new(1, C.Accent2) })
+                end)
+            end
+        end)
+    end
+    local function loadSequence()
         if loadTx then pcall(function() loadTx.Text = "加载中" end) end
         loginSequence(function()
             self:_showMainUI()
             if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
+        end)
+    end
+    function self:GetKey()
+        local v = ""
+        if keyInput then pcall(function() v = tostring(keyInput.Text or "") end) end
+        return v
+    end
+    function self:SetKey(v)
+        if keyInput then pcall(function() keyInput.Text = tostring(v or "") end) end
+    end
+    function self:GetKeyData() return self._keyData end
+    function self:VerifyKey(cb)
+        runKeyCheck(self:GetKey(), function(ok, msg, data)
+            if ok then self._keyData = data end
+            if type(cb) == "function" then pcall(cb, ok == true, msg, data) end
+        end)
+    end
+    connect(loadBtn.MouseButton1Click, function()
+        if self._loginLoading then return end
+        if not keySystem then
+            self._loginLoading = true
+            loadBtn.Active = false
+            loadSequence()
+            return
+        end
+        local key = self:GetKey():gsub("^%s+", ""):gsub("%s+$", "")
+        if #key == 0 then
+            showKeyError("请输入密钥")
+            return
+        end
+        self._loginLoading = true
+        loadBtn.Active = false
+        if loadTx then pcall(function() loadTx.Text = "验证中" end) end
+        local settled = false
+        runKeyCheck(key, function(ok, msg, data)
+            if settled then return end
+            settled = true
+            if ok then
+                self._keyData = data
+                loadSequence()
+            else
+                self._loginLoading = false
+                loadBtn.Active = true
+                showKeyError(msg or "密钥无效")
+            end
         end)
     end)
     function self:_showMainUI()
