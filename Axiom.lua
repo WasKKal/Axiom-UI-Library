@@ -1089,6 +1089,11 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
                 tweenProp(keyStroke, { Color = C.Line, Transparency = 0.2 }, 0.14)
             end
         end)
+        connect(keyInput:GetPropertyChangedSignal("Text"), function()
+            if not self._keyError then return end
+            self._keyErrSeq = (self._keyErrSeq or 0) + 1
+            if type(self._clearKeyError) == "function" then self._clearKeyError() end
+        end)
     end
     local by = keySystem and (keyTop + keyH + 10) or (baseY + avSize + 12 + 26 + 18)
     local loadLabel = keySystem and "验证密钥并载入" or "加载脚本"
@@ -1373,6 +1378,27 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             pcall(function() keyBox.Position = UDim2.fromOffset(x0, keyTop) end)
         end)
     end
+    local function clearKeyError()
+        if not self._keyError then return end
+        self._keyError = false
+        local focused = false
+        pcall(function() focused = keyInput.IsFocused == true end)
+        if keyStroke then
+            tweenProp(keyStroke, { Color = focused and C.Accent or C.Line,
+                Transparency = focused and 0 or 0.2 }, 0.16)
+        end
+        if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Sub }, 0.16) end
+        if loadTx then pcall(function() loadTx.Text = loadLabel end) end
+        if loadFill and loadFill.UIGradient then
+            pcall(function()
+                loadFill.UIGradient.Color = ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 122, 235)),
+                    ColorSequenceKeypoint.new(0.5, C.Accent),
+                    ColorSequenceKeypoint.new(1, C.Accent2) })
+            end)
+        end
+    end
+    self._clearKeyError = clearKeyError
     local function showKeyError(msg)
         if not keySystem then return end
         self._keyError = true
@@ -1391,25 +1417,9 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             end)
         end
         keyShake()
-        later(2, function()
+        later(0.8, function()
             if self._keyErrSeq ~= seq or self._loginLoading then return end
-            self._keyError = false
-            local focused = false
-            pcall(function() focused = keyInput.IsFocused == true end)
-            if keyStroke then
-                tweenProp(keyStroke, { Color = focused and C.Accent or C.Line,
-                    Transparency = focused and 0 or 0.2 }, 0.2)
-            end
-            if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Sub }, 0.2) end
-            if loadTx then pcall(function() loadTx.Text = loadLabel end) end
-            if loadFill and loadFill.UIGradient then
-                pcall(function()
-                    loadFill.UIGradient.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 122, 235)),
-                        ColorSequenceKeypoint.new(0.5, C.Accent),
-                        ColorSequenceKeypoint.new(1, C.Accent2) })
-                end)
-            end
+            clearKeyError()
         end)
     end
     local function loadSequence()
@@ -2017,9 +2027,9 @@ function Axiom.CreateWindow(opts)
                 Position = UDim2.fromOffset(rx - 44, y + 8), BackgroundColor3 = on and C.Accent or C.Track,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
             corner(tr, 12)
-            local sheen = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(1, 1, 1),
-                BackgroundTransparency = 0, BorderSizePixel = 0, Visible = on, ZIndex = 3 })
-            corner(sheen, 12); whiteSheen(sheen, 0, 0.88, 0.74)
+            local tfill = inst("Frame", tr, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Accent,
+                BackgroundTransparency = on and 0 or 1, BorderSizePixel = 0, ZIndex = 3 })
+            corner(tfill, 12); grad(tfill, C.AccentW, C.Accent, 90)
             local kn = inst("Frame", tr, { Size = UDim2.fromOffset(18, 18),
                 Position = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0),
                 AnchorPoint = Vector2.new(0, 0.5), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 4 })
@@ -2027,27 +2037,20 @@ function Axiom.CreateWindow(opts)
             local function refresh()
                 local bg = on and C.Accent or C.Track
                 local kp = UDim2.new(on and 1 or 0, on and -21 or 3, 0.5, 0)
-                if on then sheen.Visible = true end
                 local done = false
                 pcall(function()
                     local ts = game:GetService("TweenService")
                     if not ts then return end
                     local ti = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
                     ts:Create(tr, ti, { BackgroundColor3 = bg }):Play()
+                    ts:Create(tfill, ti, { BackgroundTransparency = on and 0 or 1 }):Play()
                     ts:Create(kn, ti, { Position = kp }):Play()
-                    local stw = ts:Create(sheen, ti, { BackgroundTransparency = on and 0 or 1 })
-                    if not on then
-                        stw.Completed:Connect(function()
-                            pcall(function() sheen.Visible = false end)
-                        end)
-                    end
-                    stw:Play()
                     done = true
                 end)
                 if not done then
                     tr.BackgroundColor3 = bg
+                    pcall(function() tfill.BackgroundTransparency = on and 0 or 1 end)
                     kn.Position = kp
-                    pcall(function() sheen.BackgroundTransparency = on and 0 or 1; sheen.Visible = on end)
                 end
             end
             connect(tr.MouseButton1Click, function()
