@@ -23,6 +23,7 @@ end
 
 -- 单个窗口：LoginInfo 启动页与选项卡主 UI 共存。
 -- 加载脚本后淡出登录层，露出同一个窗口的选项卡；最小化/展开/关闭都只作用于这一个窗口。
+-- 标题栏第三个绿色球：点击唤出设置面板（左侧更新日志 + 右侧账号信息/窗口比例），"应用修改"保存并弹出通知。
 local Win = Axiom.CreateWindow({
     Title = "AXIOM",
     Folder = "AxiomDemo",
