@@ -25,11 +25,15 @@ end
 -- 加载脚本后淡出登录层，露出同一个窗口的选项卡；最小化/展开/关闭都只作用于这一个窗口。
 local Win = Axiom.CreateWindow({
     Title = "AXIOM",
+    Folder = "AxiomDemo",
     LoginInfo = true,
     LoginTitle = "版本更新日志",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
     OnLoadScript = function() print("load script -> main UI") end,
 })
+
+-- Config：给控件加 ConfigKey 后即可用 Win:SaveConfig / LoadConfig 存取
+-- 例：Win:SaveConfig("Preset1"); Win:LoadConfig("Preset1"); Win:GetConfigs()
 
 -- ===== 通知快捷封装：控件回调触发右上角堆叠通知 =====
 local function toast(title, text, typ)
@@ -43,23 +47,23 @@ Tab:AddParagraph({
     Text = "主从分栏布局：左侧文字菜单，右侧表格化对齐控件。",
 })
 Tab:AddToggle({
-    Title = "Master Switch", Desc = "启用全部功能", Icon = "toggle-right", Default = true,
+    Title = "Master Switch", Desc = "启用全部功能", Icon = "toggle-right", Default = true, ConfigKey = "master",
     Callback = function(v) toast("主开关", "已" .. (v and "启用" or "关闭") .. "全部功能", v and "success" or "warning") end,
 })
 local Slider = Tab:AddSlider({
     Title = "Walk Speed", Desc = "移动速度", Icon = "gauge",
-    Min = 0, Max = 200, Default = 65,
+    Min = 0, Max = 200, Default = 65, ConfigKey = "speed",
     Callback = function(v) toast("移动速度", "当前速度：" .. tostring(v), "info") end,
 })
 local Dropdown = Tab:AddDropdown({
     Title = "Theme Preset", Desc = "主题预设", Icon = "list-filter",
     Multi = true, Options = { "Default", "Neon", "Minimal", "Retro", "Mono" },
-    Default = { "Neon", "Retro" },
+    Default = { "Neon", "Retro" }, ConfigKey = "theme",
     Callback = function(list) toast("主题预设", "已选 " .. table.concat(list, "、"), "success") end,
 })
 Tab:AddColorPicker({
     Title = "Accent Color", Desc = "强调色", Icon = "palette",
-    Default = Color3.fromRGB(88, 150, 255),
+    Default = Color3.fromRGB(88, 150, 255), ConfigKey = "accent",
     Callback = function(c) toast("强调色", "RGB(" .. math.floor(c.R * 255) .. ", " .. math.floor(c.G * 255) .. ", " .. math.floor(c.B * 255) .. ")", "info") end,
 })
 Tab:AddButton({
