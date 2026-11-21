@@ -729,6 +729,89 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         Size = UDim2.fromOffset(W, bodyH), Position = UDim2.fromOffset(0, 34),
         BackgroundColor3 = C.Bg, BorderSizePixel = 0, GroupTransparency = 0, ZIndex = 25 })
     self._loginLayer = layer
+
+    local RAINBOW = {
+        Color3.fromRGB(255, 0, 0), Color3.fromRGB(255, 140, 0),
+        Color3.fromRGB(255, 235, 0), Color3.fromRGB(80, 230, 60),
+        Color3.fromRGB(0, 210, 220), Color3.fromRGB(60, 110, 255),
+        Color3.fromRGB(180, 60, 255), Color3.fromRGB(255, 0, 0),
+    }
+    local function rainbowSeq(colors)
+        local kps = {}
+        local n = #colors
+        for i = 1, n do kps[i] = ColorSequenceKeypoint.new((i - 1) / (n - 1), colors[i]) end
+        return ColorSequence.new(kps)
+    end
+    local flowConn = nil
+    local flowGradient = nil
+    local flowEnabled = false
+    local function stopFlow()
+        if flowConn then pcall(function() flowConn:Disconnect() end); flowConn = nil end
+    end
+    local function startFlow()
+        if flowEnabled then return end
+        local ms = self.mainStroke
+        if not ms then return end
+        flowGradient = inst("UIGradient", ms, { Rotation = 0, Color = rainbowSeq(RAINBOW) })
+        flowEnabled = true
+        pcall(function() ms.Color = Color3.new(1, 1, 1) end)
+        local okRs, rs = pcall(function() return game:GetService("RunService") end)
+        if okRs and rs then
+            local rot = 0
+            local okc, conn = pcall(function()
+                return rs.Heartbeat:Connect(function(dt)
+                    if not flowEnabled then return end
+                    rot = (rot + (dt or 1 / 60) * 70) % 360
+                    pcall(function() if flowGradient then flowGradient.Rotation = rot end end)
+                end)
+            end)
+            if okc then flowConn = conn end
+        end
+    end
+    local function restoreFlow()
+        if not flowEnabled then return end
+        flowEnabled = false
+        stopFlow()
+        local ms = self.mainStroke
+        if not ms then return end
+        local duration = 0.6
+        local elapsed = 0
+        local okRs, rs = pcall(function() return game:GetService("RunService") end)
+        local function step(dt)
+            elapsed = math.min(duration, elapsed + (dt or 1 / 60))
+            local a = elapsed / duration
+            local e = a * a * (3 - 2 * a)
+            local mixed = {}
+            for i = 1, #RAINBOW do
+                local c = RAINBOW[i]
+                mixed[i] = Color3.new(
+                    c.R + (C.Border.R - c.R) * e,
+                    c.G + (C.Border.G - c.G) * e,
+                    c.B + (C.Border.B - c.B) * e)
+            end
+            pcall(function()
+                if flowGradient then flowGradient.Color = rainbowSeq(mixed) end
+            end)
+            if a >= 1 then
+                pcall(function() if flowGradient then flowGradient:Destroy() end end)
+                flowGradient = nil
+                pcall(function() ms.Color = C.Border end)
+            end
+        end
+        if okRs and rs then
+            local okc, conn = pcall(function() return rs.Heartbeat:Connect(step) end)
+            if okc then
+                pcall(task.delay, duration + 0.1, function() pcall(function() conn:Disconnect() end) end)
+            else
+                step(1 / 60)
+            end
+        else
+            step(1 / 60)
+        end
+    end
+    self._startLoginFlow = startFlow
+    self._restoreLoginFlow = restoreFlow
+    startFlow()
     local left = inst("ScrollingFrame", layer, { Size = UDim2.fromOffset(leftW, bodyH),
         Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 26,
@@ -859,6 +942,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     function self:_showMainUI()
         if not self._isLogin then return end
         self._isLogin = false
+        restoreFlow()
         fade(layer, 1, 0.4, function() layer.Visible = false end)
         contentLayer.GroupTransparency = 1; contentLayer.Visible = true
         fade(contentLayer, 0, 0.45)
@@ -911,6 +995,7 @@ function Axiom.CreateWindow(opts)
     local mainStroke = stroke(main, C.Border, 1.5, 1)  
     if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
     self.main = main
+    self.mainStroke = mainStroke
     local inputBlocker = inst("TextButton", main, { Name = "InputBlocker",
         Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
