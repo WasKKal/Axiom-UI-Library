@@ -30,15 +30,27 @@ local Win = Axiom.CreateWindow({
     LoginInfo = true,
     LoginTitle = "版本更新日志",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
-    -- KeySystem 演示：输入框占位文字可改；点击左侧 user-key 图标可自定义行为（这里演示读取剪贴板粘贴）。
+    -- KeySystem 演示：输入框占位文字可改；点击左侧 user-key 图标可自定义行为（这里演示复制卡密到剪贴板）。
     -- 正式使用时把 KeyCheck 换成自己的后端接口，或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }。
     KeySystem = true,
     KeyPlaceholder = "输入 AXIOM-DEMO 解锁",
     KeyDefault = "",
     OnKeyIconClick = function(win, input)
-        local txt = nil
-        pcall(function() txt = getclipboard() end)
-        if type(txt) == "string" and txt ~= "" then input.Text = txt end
+        local txt = tostring(input and input.Text or "")
+        local done = false
+        pcall(function()
+            if type(setclipboard) == "function" then
+                setclipboard(txt); done = true
+            elseif type(toclipboard) == "function" then
+                toclipboard(txt); done = true
+            end
+        end)
+        Axiom.Notify({
+            Title = "卡密",
+            Text = done and "卡密已复制到剪贴板" or "复制失败，请手动选择文本",
+            Type = done and "success" or "warning",
+            Duration = 2.5,
+        })
     end,
     KeyCheck = function(key, resolve)
         if string.upper(key) == "AXIOM-DEMO" then
