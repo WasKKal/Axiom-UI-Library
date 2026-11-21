@@ -91,7 +91,7 @@ local Win = Axiom.CreateWindow({
 
 ### `Axiom.Notify(o)`（全局通知，推荐）
 
-`o`：`Title`、`Text`（或 `Info`）、`Duration`（秒，默认 4）、`Type`（`info`/`success`/`warning`/`error`，影响左侧色条与图标）、`Icon`。从屏幕右上角堆叠，多条通知自动向下排列；高度按文字长度自适应（实测 `TextService` 优先、超长文本自动换行）；入场从右滑入+渐显，退场滑出+渐隐并让后续通知自动上移。返回 `{ Frame, Dismiss() }`，可手动 `Dismiss()` 提前关闭。
+照抄 WasUI-Pro 通知系统：**固定 250×30 紧凑框架**（不再随文字自适应高度），右上角堆叠、距右缘 10px、间距 8px；**左边缘 3px 蓝白竖向渐变条**。`o`：`Title`（12 号粗体）、`Text`（或 `Info`，10 号单行超长截断）、`Duration`（秒，默认 3）、`Type`（`info`/`success`/`warning`/`error`，仅影响描边着色）。入场从屏幕右侧外滑入 0.35s，到期后其余通知按创建顺序自动上移补位，当前通知滑出右侧+淡出销毁。返回 `{ Frame, Dismiss() }`，可手动提前关闭。
 
 ```lua
 Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success", Duration = 5 })
