@@ -29,7 +29,6 @@ local Win = Axiom.CreateWindow({
     LoginTitle = "版本更新日志",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
     OnLoadScript = function() print("load script -> main UI") end,
-    OnUnloadScript = function() print("unload script -> fade out & destroy") end,
 })
 
 -- ===== 主 UI 选项卡（加载脚本后显示）=====
