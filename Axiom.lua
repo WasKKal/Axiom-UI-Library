@@ -572,7 +572,8 @@ local function tweenProp(o, goal, dur, cb, delay)
     end
 end
 local function tweenEx(o, goal, dur, style, dir, cb, delay)
-    if not o then return end
+    if not o then return nil end
+    local created = nil
     local function run()
         local done = false
         pcall(function()
@@ -581,6 +582,7 @@ local function tweenEx(o, goal, dur, style, dir, cb, delay)
             local ti = TweenInfo.new(dur or 0.6, style or Enum.EasingStyle.Quint,
                 dir or Enum.EasingDirection.InOut)
             local tw = ts:Create(o, ti, goal)
+            created = tw
             if type(cb) == "function" then tw.Completed:Connect(cb) end
             tw:Play()
             done = true
@@ -595,6 +597,7 @@ local function tweenEx(o, goal, dur, style, dir, cb, delay)
     else
         run()
     end
+    return created
 end
 local function deepFade(root, to, dur, delayT)
     if not root then return end
@@ -1232,8 +1235,10 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     connect(applyBtn.MouseButton1Click, function()
         local k = (self._baseScale or 0.65) * (pct / 100)
         local newPos = UDim2.new(0.5, -(W * k) / 2, 0.5, -(H * k) / 2)
-        tweenEx(self._mainScale, { Scale = k }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
-        tweenEx(main, { Position = newPos }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+        self._scaleTweens = {
+            tweenEx(self._mainScale, { Scale = k }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            tweenEx(main, { Position = newPos }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        }
         hidePreview()
         if type(Axiom.Notify) == "function" then
             pcall(function() Axiom.Notify({ Title = "设置", Text = "你的设定已保存!", Type = "success", Duration = 2.5 }) end)
@@ -1475,6 +1480,7 @@ function Axiom.CreateWindow(opts)
     pcall(function() UIS = game:GetService("UserInputService") end)
     local dragging, dragStart, mainStart = false, nil, nil
     local function startDrag(input)
+        if self._closing then return end
         local ok, typ = pcall(function() return input.UserInputType end)
         if not ok then return end
         if typ ~= Enum.UserInputType.MouseButton1 and typ ~= Enum.UserInputType.Touch then return end
@@ -2058,9 +2064,31 @@ function Axiom.CreateWindow(opts)
         if closing then return end
         closing = true
         self._closing = true
-        pcall(function() if introLayer and introLayer.Parent then introLayer.Visible = false end end)
-        pcall(function() if self._mainScale then self._mainScale.Scale = self._baseScale end end)
+        dragging = false
+        if type(self._scaleTweens) == "table" then
+            for _, tw in pairs(self._scaleTweens) do
+                if tw then pcall(function() tw:Cancel() end) end
+            end
+        end
+        self._scaleTweens = nil
+        pcall(function() if self._intro and self._intro.layer and self._intro.layer.Parent then self._intro.layer.Visible = false end end)
+        local sc = self._baseScale or SCALE
+        pcall(function() sc = self._mainScale.Scale end)
+        if type(sc) ~= "number" or sc <= 0 then sc = self._baseScale or SCALE end
+        pcall(function()
+            local cs = main.Size
+            local cw = cs.X.Offset + cs.X.Scale
+            local ch = cs.Y.Offset + cs.Y.Scale
+            local p = main.Position
+            main.AnchorPoint = Vector2.new(0.5, 0.5)
+            main.Position = UDim2.new(p.X.Scale, p.X.Offset + cw * sc / 2,
+                p.Y.Scale, p.Y.Offset + ch * sc / 2)
+        end)
         pcall(function() main.GroupTransparency = 0 end)
+        local function atCenter(dy)
+            local p = main.Position
+            return UDim2.new(p.X.Scale, p.X.Offset, p.Y.Scale, p.Y.Offset + (dy or 0))
+        end
         fade(confirm, 1, 0.2, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
         if type(self._stopExitHint) == "function" then self._stopExitHint() end
@@ -2119,14 +2147,14 @@ function Axiom.CreateWindow(opts)
             Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
             GroupTransparency = 0, BorderSizePixel = 0, Visible = false, ZIndex = 200 })
         local centerIcon = inst("ImageLabel", fx, { Name = "ThanksIcon",
-            Size = UDim2.fromOffset(72, 72), Position = UDim2.new(0.5, 0, 0.5, -34),
+            Size = UDim2.fromOffset(72, 72), Position = atCenter(-34),
             AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
             ImageTransparency = 1, ZIndex = 202 })
         applyIcon(centerIcon, "handshake", C.Accent)
         local thanksText = label(fx, "感谢使用", 20, C.Text, true, Enum.TextXAlignment.Center)
         thanksText.Name = "ThanksText"
         thanksText.Size = UDim2.fromOffset(240, 30)
-        thanksText.Position = UDim2.new(0.5, 0, 0.5, 28)
+        thanksText.Position = atCenter(28)
         thanksText.AnchorPoint = Vector2.new(0.5, 0.5)
         thanksText.TextTransparency = 1
         thanksText.ZIndex = 202
@@ -2137,33 +2165,31 @@ function Axiom.CreateWindow(opts)
         end
         local function stageCollapse()
             local d = 150
-            local okSc, sc = pcall(function() return self._mainScale.Scale end)
-            sc = okSc and sc or SCALE
-            local half = (d * sc) / 2
-            tweenProp(main, { Size = UDim2.fromOffset(d, d),
-                Position = UDim2.new(0.5, -half, 0.5, -half) }, 0.7)
+            tweenProp(main, { Size = UDim2.fromOffset(d, d) }, 0.7)
             if mainCorner then
                 tweenProp(mainCorner, { CornerRadius = UDim.new(0, d / 2) }, 0.7)
             end
-            tweenProp(centerIcon, { Size = UDim2.fromOffset(40, 40),
-                Position = UDim2.new(0.5, 0, 0.5, -20) }, 0.7)
-            tweenProp(thanksText, { Position = UDim2.new(0.5, 0, 0.5, 16) }, 0.7)
+            local iconSize = math.max(26, math.floor(d * sc * 0.42))
+            tweenProp(centerIcon, { Size = UDim2.fromOffset(iconSize, iconSize),
+                Position = atCenter(0) }, 0.7)
+            tweenProp(thanksText, { Position = atCenter(iconSize * 0.5 + 18) }, 0.7)
         end
         local function stageVanish()
             fade(main, 1, 0.5)
-            if self._mainScale then
-                tweenProp(self._mainScale, { Scale = 0.02 }, 0.5)
-            end
-            tweenProp(centerIcon, { ImageTransparency = 1, Size = UDim2.fromOffset(10, 10) }, 0.5)
+            tweenProp(main, { Size = UDim2.fromOffset(6, 6) }, 0.5)
+            tweenProp(centerIcon, { ImageTransparency = 1, Size = UDim2.fromOffset(8, 8) }, 0.5)
             tweenProp(thanksText, { TextTransparency = 1 }, 0.4)
         end
         local function stageParticles()
             local parts = {}
             local N = 20
             local palette = { C.Accent, C.AccentW, C.Accent2, Color3.new(1, 1, 1) }
+            local origin = main.Position
+            local ox, oy = origin.X.Scale, origin.Y.Scale
+            local oox, ooy = origin.X.Offset, origin.Y.Offset
             for i = 1, N do
                 local p = inst("Frame", fx, { Name = "Particle",
-                    Size = UDim2.fromOffset(9, 9), Position = UDim2.new(0.5, 0, 0.5, 0),
+                    Size = UDim2.fromOffset(9, 9), Position = UDim2.new(ox, oox, oy, ooy),
                     AnchorPoint = Vector2.new(0.5, 0.5),
                     BackgroundColor3 = palette[(i % #palette) + 1],
                     BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 204 })
@@ -2175,8 +2201,8 @@ function Axiom.CreateWindow(opts)
                 local ang = (i / N) * math.pi * 2
                 local dx, dy = math.cos(ang), math.sin(ang)
                 local deg = i * (360 / N)
-                local p1 = UDim2.new(0.5, dx * R1, 0.5, dy * R1)
-                local p2 = UDim2.new(0.5, dx * R2, 0.5, dy * R2)
+                local p1 = UDim2.new(ox, oox + dx * R1, oy, ooy + dy * R1)
+                local p2 = UDim2.new(ox, oox + dx * R2, oy, ooy + dy * R2)
                 local d1 = (i % 5) * 0.015
                 later(d1, function()
                     tweenProp(p, { Position = p1, BackgroundTransparency = 0 }, 0.32)
