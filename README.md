@@ -19,7 +19,8 @@
 - 🔔 **全局通知**：右上角堆叠通知，左边缘蓝白渐变条贴齐边框，圆角裁剪，支持多种类型着色。
 - 🛡️ **输入隔离**：窗口区域透明拦截层吸收空白处点击 / 触摸，防止穿透到 Roblox；窗口外区域不拦截，允许正常点击 / 触摸。
 - 💾 **Config 系统**：控件 `ConfigKey` 绑定 + 命名配置存取（保存 / 载入 / 删除 / 重命名 / 列表），落盘到 `Axiom/<Folder>/`。
-- 🔐 **登录启动页**：可选启动页，头像 / 用户名 / 加载按钮居中，加载动画结束后切入主界面。
+- 🔐 **登录启动页**：可选启动页，左侧更新日志标题常驻顶部、正文独立滚动；头像 / 用户名 / 加载按钮居中，加载动画结束后切入主界面。
+- 🔑 **卡密验证（KeySystem）**：开启后按钮文案变为「验证密钥并载入」，按钮上方出现带 `user-key` 图标的卡密输入框，占位文字与图标点击行为均可自定义；支持 Luarmor 内置适配、自定义 HTTP 接口或完全自定义校验函数。
 - 🖼️ **图标缓存**：Lucide v6 图标首次加载后缓存到本地，后续启动优先读取本地，无需重复联网。
 - 🔌 **零依赖单文件**：`Axiom.lua` 独立引入，兼容主流 Roblox 执行环境与 Roblox Studio。
 
@@ -62,7 +63,7 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 
 | 接口 | 说明 |
 | --- | --- |
-| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Folder`（资源/配置目录名）、`ConfigName`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript` |
+| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Folder`（资源/配置目录名）、`ConfigName`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript`；卡密相关：`KeySystem`、`KeyPlaceholder`、`KeyIcon`、`KeyDefault`、`OnKeyIconClick`、`KeyCheck`、`KeyAPI` |
 | `Window:AddTab(name, icon)` | 添加选项卡，返回 `Tab` |
 | `Window:AddLoginParagraph(o)` | 启动页添加整行段落 |
 | `Window:ShowNotify(o)` | 窗口内右下角简易通知 |
@@ -70,6 +71,57 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 | `Axiom.GetLucideCacheDir()` | 图标缓存目录 |
 | `Axiom.GetLucideModulePath()` | 图标缓存模块路径 |
 | `Axiom.GetLucideSource()` | 图标首次加载来源 |
+
+### 卡密验证（KeySystem）
+
+需同时开启 `LoginInfo = true`。开启后登录按钮上方出现卡密输入框，按钮文案改为「验证密钥并载入」；左侧 `user-key` 图标可点击，输入框占位文字可自定义。
+
+```lua
+local Win = Axiom.CreateWindow({
+    Title = "AXIOM",
+    LoginInfo = true,
+    KeySystem = true,
+    KeyPlaceholder = "请输入您的卡密",
+    KeyIcon = "user-key",
+    KeyDefault = "",
+    OnKeyIconClick = function(win, input, field)
+        print("点击了卡密图标")
+    end,
+    KeyCheck = function(key, resolve)
+        if key == "MY-KEY" then
+            resolve(true, "验证成功", { plan = "pro" })
+        else
+            resolve(false, "密钥无效")
+        end
+    end,
+})
+```
+
+`resolve(ok, message, data)` 可同步或异步调用，20 秒未回调判定为超时；`data` 通过 `Win:GetKeyData()` 取回。
+
+**自定义 HTTP 接口**
+
+```lua
+KeyAPI = {
+    Url = "https://your-server.example/verify",
+    Method = "POST",
+    Headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer ..." },
+    Body = function(key) return { key = key, hwid = "..." } end,
+    Check = function(data, raw, status) return data and data.valid == true, data and data.message end,
+}
+```
+
+默认 POST JSON `{ key = key }`；响应 2xx 且包含 `success` / `valid` / `ok = true`（或 `status = "active"`）视为通过，`success = false`、`banned`、`status = "banned"` 视为失败。`Check` 可完全接管判定。`Method = "GET"` 时卡密拼到 `?key=`。
+
+**Luarmor 内置适配**
+
+```lua
+KeyAPI = { Provider = "Luarmor", ScriptId = "你的脚本 ID" }
+```
+
+通过 Luarmor 官方客户端库的 `check_key` 校验，仅 `KEY_VALID` 放行，其余状态映射为中文提示（过期 / 封禁 / 绑定其他设备 / 不存在 / 脚本 ID 错误等）。验证通过后自动解锁 UI；追加 `LoadScript = true` 时会写入 `script_key` 并调用 `load_script()`。
+
+> Luarmor 校验由官方库在客户端完成，UI 内无需填写 API Key。若使用自建后端代理，请改用上面的自定义 HTTP 接口，避免把 `Authorization` 暴露在客户端。
 
 ### Tab 控件
 
@@ -95,6 +147,9 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 | `Win:SetConfig(name)` / `GetConfigName()` / `GetConfigPath()` | 切换 / 查询当前配置 |
 | `Win:DeleteConfig(name)` / `RenameConfig(old, new)` | 删除 / 重命名（Default 不可删） |
 | `Win:GetAssetDir()` / `GetConfigDir()` | 资源 / 配置落盘目录，形如 `Axiom/<Folder>/` |
+| `Win:GetKey()` / `Win:SetKey(v)` | 读取 / 写入卡密输入框 |
+| `Win:GetKeyData()` | 最近一次验证通过返回的数据 |
+| `Win:VerifyKey(cb)` | 手动触发验证，`cb(ok, msg, data)` |
 
 背景图下载到 `Axiom/<Folder>/` 并按 URL 编码命名；下次使用命中本地缓存不再下载，更换 `Background` URL 时自动删除旧图。
 
