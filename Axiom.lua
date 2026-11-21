@@ -411,6 +411,36 @@ local function connect(signal, fn)
     if not signal then return end
     pcall(function() signal:Connect(fn) end)
 end
+local function bindDrag(control, onMove)
+    local state = { active = false, conns = {} }
+    local function release()
+        state.active = false
+        for _, cn in ipairs(state.conns) do pcall(function() cn:Disconnect() end) end
+        state.conns = {}
+    end
+    connect(control.InputBegan, function(input)
+        release()
+        state.active = true
+        onMove(input)
+        pcall(function()
+            local uis = game:GetService("UserInputService")
+            if not uis then return end
+            state.conns[1] = uis.InputChanged:Connect(function(i)
+                if not state.active then return end
+                local t = i and i.UserInputType
+                if t == Enum.UserInputType.MouseMovement or t == Enum.UserInputType.Touch then onMove(i) end
+            end)
+            state.conns[2] = uis.InputEnded:Connect(function(i)
+                if not state.active then return end
+                local t = i and i.UserInputType
+                if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then release() end
+            end)
+        end)
+    end)
+    connect(control.InputChanged, function(input) if state.active then onMove(input) end end)
+    connect(control.InputEnded, function() release() end)
+    return state
+end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
@@ -1118,7 +1148,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             pvSnap = false
             pcall(function()
                 preview.Size = UDim2.fromOffset(nw, nh)
-                preview.Position = UDim2.fromOffset(cx, cy)
+                preview.Position = UDim2.new(0.5, 0, 0.5, 0)
             end)
             return
         end
@@ -1128,30 +1158,23 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             pvTweens = {}
             if not ts then
                 preview.Size = UDim2.fromOffset(nw, nh)
-                preview.Position = UDim2.fromOffset(cx, cy)
+                preview.Position = UDim2.new(0.5, 0, 0.5, 0)
                 return
             end
             local ti = TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
             local tw1 = ts:Create(preview, ti, { Size = UDim2.fromOffset(nw, nh) })
-            local tw2 = ts:Create(preview, ti, { Position = UDim2.fromOffset(cx, cy) })
-            pvTweens[1] = tw1; pvTweens[2] = tw2
-            tw1:Play(); tw2:Play()
+            pvTweens[1] = tw1
+            tw1:Play()
         end)
     end
     local function updatePreview(k)
         if not k then hidePreview(); return end
         local nw, nh = W * k, H * k
-        local curK = (self._mainScale and self._mainScale.Scale) or pvBaseScale
-        local curW, curH = W * curK, H * curK
-        local mp = main.Position
-        local cx = (mp.X.Scale or 0) * 0 + mp.X.Offset + curW / 2
-        local cy = (mp.Y.Scale or 0) * 0 + mp.Y.Offset + curH / 2
-        tweenPreview(nw, nh, cx, cy)
+        tweenPreview(nw, nh)
     end
     self._showSizePreview = showPreview
     self._hideSizePreview = hidePreview
     self._updateSizePreview = updatePreview
-    local sdrag = false
     local function sfrom(input)
         local okX, ax = pcall(function() return input.Position.X end)
         if not okX or not ax then return end
@@ -1164,9 +1187,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             updatePreview(pvBaseScale * (pct / 100))
         end
     end
-    connect(strack.InputBegan, function(input) sdrag = true; sfrom(input) end)
-    connect(strack.InputChanged, function(input) if sdrag then sfrom(input) end end)
-    connect(strack.InputEnded, function() sdrag = false end)
+    bindDrag(strack, sfrom)
     self._getSettingsScale = function() return pct / 100 end
     local applyBtn = inst("TextButton", sRight, { Name = "ApplyUi", Size = UDim2.fromOffset(rightW - 32, 36),
         Position = UDim2.fromOffset(16, bodyH - 48), BackgroundColor3 = C.Accent,
@@ -1291,7 +1312,7 @@ function Axiom.CreateWindow(opts)
     local hintIcon = inst("ImageButton", bar, { Name = "ExitHintIcon", Size = UDim2.fromOffset(14, 14),
         Position = UDim2.fromOffset(hintIconX, 10), BackgroundTransparency = 1, ImageTransparency = 1,
         AutoButtonColor = false, Visible = false, ZIndex = 6 })
-    applyIcon(hintIcon, "square-arrow-left-exit", C.Accent)
+    applyIcon(hintIcon, "arrow-left", C.Accent)
     local hintText = inst("TextButton", bar, { Name = "ExitHintText", Size = UDim2.fromOffset(112, 16),
         Position = UDim2.fromOffset(hintTextX, 9), BackgroundTransparency = 1, Text = "点击此处关闭页面",
         TextColor3 = C.Accent, TextSize = 10, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
@@ -1626,7 +1647,6 @@ function Axiom.CreateWindow(opts)
             corner(fl, 3)
             local vv = label(host, tostring(math.floor(val)), 12, C.Accent, true, Enum.TextXAlignment.Right)
             vv.Size = UDim2.fromOffset(38, 20); vv.Position = UDim2.fromOffset(rx - 40, y + 12); vv.ZIndex = 3
-            local dragging = false
             local function applyVal(v, fire)
                 val = clamp(v, minN, maxN)
                 local pct = (val - minN) / math.max(1, maxN - minN)
@@ -1643,9 +1663,7 @@ function Axiom.CreateWindow(opts)
                     applyVal(minN + clamp((absX - rel) / wid, 0, 1) * (maxN - minN), true)
                 end
             end
-            connect(tr.InputBegan, function(input) dragging = true; fromInput(input) end)
-            connect(tr.InputChanged, function(input) if dragging then fromInput(input) end end)
-            connect(tr.InputEnded, function() dragging = false end)
+            bindDrag(tr, fromInput)
             function obj:SetValue(v) applyVal(v, false) end
             function obj:Get() return val end
             registerConfig(self, obj, o, "Slider")
@@ -1701,7 +1719,7 @@ function Axiom.CreateWindow(opts)
                         local on = selected[opt] and true or false
                         ui.row.BackgroundColor3 = on and Color3.new(1, 1, 1) or C.Row
                         ui.row.BackgroundTransparency = on and 0.86 or 0
-                        ui.txt.TextColor3 = on and Color3.fromRGB(18, 18, 22) or C.Text
+                        ui.txt.TextColor3 = C.Text
                     end
                 end
             end
