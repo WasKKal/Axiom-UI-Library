@@ -405,7 +405,9 @@ local function estimateTextHeight(text, size, width)
     return math.ceil(lines * (size * 1.45)) + 6
 end
 
--- ===== 全局 Notify：右上角堆叠，高度自适应，入场/退场动画 =====
+-- ===== 全局 Notify：照抄 WasUI-Pro 通知系统（右上角堆叠 + 固定紧凑框架 + 蓝白渐变左边条）=====
+-- WasUI-Pro 参数：Top=20 Spacing=8 Height=30 Width=250；本库保留 Type 变体的描边着色
+local N_TOP, N_SPACING, N_H, N_W = 20, 8, 30, 250
 local notifyState = nil
 local function notifyEnsure()
     if notifyState and notifyState.gui and notifyState.gui.Parent then return notifyState end
@@ -413,65 +415,76 @@ local function notifyEnsure()
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100001 })
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
-    local stack = inst("Frame", gui, { Name = "Stack", Size = UDim2.fromOffset(0, 0),
-        Position = UDim2.new(1, -340, 0, 16), BackgroundTransparency = 1, ZIndex = 1 })
-    notifyState = { gui = gui, stack = stack, list = {} }
+    notifyState = { gui = gui, list = {}, seq = 0 }
     return notifyState
 end
+-- 照抄 WasUI-Pro.updateAllNotificationPositions：按创建时间排序，重算每条的目标 Y
 local function notifyReflow()
-    if not notifyState then return end
-    local y = 0
+    if not notifyState then return {} end
+    local sorted = {}
     for _, n in ipairs(notifyState.list) do
-        if n.alive then
-            tweenProp(n.frame, { Position = UDim2.fromOffset(0, y) }, 0.26)
-            y = y + n.h + 10
-        end
+        if n.alive then sorted[#sorted + 1] = n end
+    end
+    table.sort(sorted, function(a, b) return a.seq < b.seq end)
+    local targets = {}
+    for i, n in ipairs(sorted) do
+        local targetY = N_TOP + (i - 1) * (N_H + N_SPACING)
+        targets[n] = UDim2.new(1, -N_W - 10, 0, targetY)  -- 距屏幕右缘 10px
+    end
+    return targets
+end
+local function notifyApply(targets, dur)
+    for n, pos in pairs(targets) do
+        tweenProp(n.frame, { Position = pos }, dur or 0.35)
     end
 end
 function Axiom.Notify(o)
     o = o or {}
     local st = notifyEnsure()
-    local text = tostring(o.Text or o.Info or "")
-    local title = tostring(o.Title or "Axiom")
-    local NW, textW = 320, 280
-    local th = estimateTextHeight(text, 12, textW)
-    local h = math.max(70, 34 + th + 18)
-    local accent = C.Accent
-    if o.Type == "success" then accent = C.Green
-    elseif o.Type == "warning" then accent = Color3.fromRGB(255, 189, 46)
-    elseif o.Type == "error" then accent = Color3.fromRGB(255, 95, 86) end
-    local frame = inst("CanvasGroup", st.stack, { Name = "Notice", Size = UDim2.fromOffset(NW, h),
-        Position = UDim2.fromOffset(40, 0), BackgroundColor3 = C.Panel,
-        BorderSizePixel = 0, GroupTransparency = 1, ZIndex = 2 })
-    corner(frame, 10); stroke(frame, accent, 1.5, 0.25)
-    local rail = inst("Frame", frame, { Size = UDim2.fromOffset(3, h - 16),
-        Position = UDim2.fromOffset(0, 8), BackgroundColor3 = accent,
-        BorderSizePixel = 0, ZIndex = 3 })
-    corner(rail, 2)
-    local ic = inst("ImageLabel", frame, { Size = UDim2.fromOffset(20, 20),
-        Position = UDim2.fromOffset(14, 9), BackgroundTransparency = 1, ZIndex = 3 })
-    applyIcon(ic, o.Icon or ((o.Type == "success") and "circle-check" or "bell"), accent)
-    local tt = label(frame, title, 13, C.Text, true)
-    tt.Size = UDim2.fromOffset(NW - 52, 18); tt.Position = UDim2.fromOffset(42, 8); tt.ZIndex = 3
-    local dd = label(frame, text, 12, C.Sub)
-    dd.Size = UDim2.fromOffset(textW, th); dd.Position = UDim2.fromOffset(20, 30)
-    dd.TextWrapped = true; dd.ZIndex = 3
-    local entry = { frame = frame, h = h, alive = true }
+    local title = tostring(o.Title or "Notification")
+    local content = tostring(o.Text or o.Info or "")
+    local borderColor = C.Line
+    if o.Type == "success" then borderColor = C.Green
+    elseif o.Type == "warning" then borderColor = Color3.fromRGB(255, 189, 46)
+    elseif o.Type == "error" then borderColor = Color3.fromRGB(255, 95, 86) end
+    -- 框架：固定 250×30，从屏幕右侧外滑入；ClipsDescendants 裁掉圆角外的渐变条
+    local frame = inst("Frame", st.gui, { Name = "Notice",
+        Size = UDim2.fromOffset(N_W, N_H), Position = UDim2.new(1, N_W + 20, 0, N_TOP),
+        BackgroundColor3 = C.Panel, BackgroundTransparency = 0.2,
+        ClipsDescendants = true, BorderSizePixel = 0, Visible = true, ZIndex = 9999 })
+    corner(frame, 6)
+    local strokeObj = stroke(frame, borderColor, 1, 0.5)
+    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白），宽度 3px，上下留 6px
+    local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H - 12),
+        Position = UDim2.fromOffset(0, 6), BackgroundColor3 = C.Accent,
+        BorderSizePixel = 0, ZIndex = 1 })
+    corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
+    -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
+    local tt = label(frame, title, 12, C.Text, true, Enum.TextXAlignment.Left)
+    tt.Name = "Title"; tt.Size = UDim2.new(1, -16, 0, 14); tt.Position = UDim2.fromOffset(10, 2)
+    tt.ZIndex = 2
+    -- 内容：10 号常规、左对齐，单行截断（固定高度框架不换行）
+    local dd = label(frame, content, 10, C.Sub, false, Enum.TextXAlignment.Left)
+    dd.Name = "Content"; dd.Size = UDim2.new(1, -16, 0, 12); dd.Position = UDim2.fromOffset(10, 16)
+    dd.ZIndex = 2
+    pcall(function() dd.TextTruncate = Enum.TextTruncate.AtEnd end)
+    local entry = { frame = frame, alive = true, seq = st.seq }
+    st.seq = st.seq + 1
     st.list[#st.list + 1] = entry
-    notifyReflow()
-    fade(frame, 0, 0.3)
+    notifyApply(notifyReflow(), 0.35)  -- 新通知滑入 + 已有通知重排
     local function dismiss()
         if not entry.alive then return end
         entry.alive = false
-        tweenProp(frame, { Position = UDim2.fromOffset(40, frame.Position.Y.Offset) }, 0.28)
-        fade(frame, 1, 0.3, function()
+        notifyApply(notifyReflow(), 0.3)  -- 剩余通知上移补位
+        -- 当前通知滑出右侧并淡出（照抄 WasUI-Pro 退场）；用 tweenProp 统一处理 Completed 与 mock 兼容
+        tweenProp(frame, { Position = UDim2.new(1, N_W + 20, 0, frame.Position.Y.Offset),
+            BackgroundTransparency = 1 }, 0.3, function()
             for i, x in ipairs(st.list) do if x == entry then table.remove(st.list, i); break end end
             pcall(function() if frame.Parent then frame:Destroy() end end)
-            notifyReflow()
         end)
     end
     if type(task) == "table" and type(task.delay) == "function" then
-        pcall(task.delay, o.Duration or 4, dismiss)
+        pcall(task.delay, o.Duration or 3, dismiss)
     end
     return { Frame = frame, Dismiss = dismiss }
 end
