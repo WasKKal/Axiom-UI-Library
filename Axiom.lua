@@ -28,13 +28,10 @@ local function hasFs()
     return type(isfile) == "function" and type(readfile) == "function"
         and type(writefile) == "function" and type(makefolder) == "function"
 end
-
--- ===== Config 系统（后端 API，照抄 AsLab 的落盘/编码约定）=====
 local inst
 local HttpService = pcall(function() return game:GetService("HttpService") end) and game:GetService("HttpService") or nil
 local jsonEncodeValue, jsonDecodeRaw
 do
-    -- 探测两套调用约定（真机方法式 HttpService:JSONEncode vs 无头环境函数式 JSONEncode(v)）
     local function tryEncode(v)
         if not HttpService then return nil end
         local ok, r = pcall(function() return HttpService:JSONEncode(v) end)
@@ -140,7 +137,6 @@ local function syncConfigValue(ctrl)
         end
     end)
 end
--- 控件注册 ConfigKey：挂上取值器与 Set 别名，保存时实时从控件读当前值
 local function registerConfig(win, obj, o, kind)
     local key = o and o.ConfigKey
     if type(key) ~= "string" or key == "" then return end
@@ -200,12 +196,10 @@ local function loadLucide()
     if mod then LucideModule = mod; LucideSource = "network" end
     return mod
 end
--- ===== 背景图资源加载：下载到 Folder 对应目录，按 URL 编码命名，命中本地则不再下载，换 URL 自动清理旧图 =====
 local ImageCache = {}
--- URL 编码为安全 png 文件名（保留可读前缀 + 短哈希保证唯一，避免非法字符/长度问题）
 local function urlToPngName(url)
     local prefix = tostring(url):match("([^/]+)$") or "bg"
-    prefix = prefix:gsub("%.[%w]+$", "")  -- 去原扩展名
+    prefix = prefix:gsub("%.[%w]+$", "")  
     prefix = prefix:gsub("[^%w%-_]+", "_")
     if #prefix > 40 then prefix = prefix:sub(1, 40) end
     if prefix == "" then prefix = "bg" end
@@ -213,7 +207,6 @@ local function urlToPngName(url)
     for i = 1, #tostring(url) do h = (h * 31 + tostring(url):byte(i)) % 1000000007 end
     return prefix .. "_" .. string.format("%08x", h) .. ".png"
 end
--- 读取/写入某目录记录的当前背景文件名清单，用于换 URL 时删除旧图
 local function bgStatePath(dir) return dir .. "/bg_state.json" end
 local function readBgState(dir)
     local state = {}
@@ -234,7 +227,6 @@ local function writeBgState(dir, state)
         if ok and type(enc) == "string" then writefile(bgStatePath(dir), enc) end
     end)
 end
--- assetDir：由 CreateWindow 的 Folder 决定；旧图清理按该目录记录
 local function resolveImage(src, assetDir)
     if type(src) ~= "string" or #src == 0 then return nil end
     local cacheKey = tostring(assetDir or "") .. "|" .. src
@@ -249,7 +241,6 @@ local function resolveImage(src, assetDir)
             local pngName = urlToPngName(src)
             local localPath = dir .. "/" .. pngName
             if hasFs() and type(getcustomasset) == "function" then
-                -- 命中本地缓存：直接使用，不再下载
                 if not fileExists(localPath) then
                     local content = httpGet(src)
                     if type(content) == "string" and #content > 100 then
@@ -260,7 +251,6 @@ local function resolveImage(src, assetDir)
                     local okA, asset = pcall(getcustomasset, localPath)
                     if okA and type(asset) == "string" and #asset > 0 then result = asset end
                 end
-                -- 换 URL：删除该目录记录的旧背景图（保留当前）
                 local state = readBgState(dir)
                 local old = state.file
                 if type(old) == "string" and old ~= "" and old ~= pngName then
@@ -361,7 +351,6 @@ local function resolveHolder()
     return nil
 end
 local function clamp(v, a, b) return math.max(a, math.min(b, v)) end
--- ===== ColorPicker / Dropdown 共享辅助（照抄 AsLab 的实现细节）=====
 local function colorToHSV(c)
     local ok, r, g, b = pcall(function() return c.R, c.G, c.B end)
     if not ok or r == nil then return 0, 0, 1 end
@@ -425,7 +414,6 @@ end
 local function emit(obj, value)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
--- ===== 屏幕变暗：模仿 TrashHub——手动循环渐变 Lighting + 半透明黑遮罩（不依赖 TweenService）=====
 local lightingOrig = nil
 local function lerpCol(a, b, t)
     return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
@@ -462,7 +450,6 @@ local function tweenLighting(dark, dur)
         run()
     end
 end
--- 半透明黑遮罩手动循环渐变（模仿附件 fadeOut 的 30 步写法）
 local function tweenShadeAlpha(shadeObj, to, dur, done)
     if not shadeObj then return end
     local from = shadeObj.BackgroundTransparency or 1
@@ -482,7 +469,6 @@ local function tweenShadeAlpha(shadeObj, to, dur, done)
         run()
     end
 end
-
 local strokeBase = setmetatable({}, { __mode = "k" })
 local function collectStrokes(root, out)
     out = out or {}
@@ -567,7 +553,6 @@ local function fadeAny(o, to, dur, cb)
         if type(cb) == "function" then pcall(cb) end
     end
 end
--- 通用补间：对实例 o 的多个属性同时补间到 goal，带 pcall 兜底（失败立即设值）；delay 用于动画顺序错峰
 local function tweenProp(o, goal, dur, cb, delay)
     if not o then return end
     local function run()
@@ -592,7 +577,6 @@ local function tweenProp(o, goal, dur, cb, delay)
         run()
     end
 end
--- 自定义缓动补间：用于入场动画的曲线变速（style/dir 可指定）
 local function tweenEx(o, goal, dur, style, dir, cb, delay)
     if not o then return end
     local function run()
@@ -618,7 +602,6 @@ local function tweenEx(o, goal, dur, style, dir, cb, delay)
         run()
     end
 end
-
 local Axiom = {}
 Axiom.__index = Axiom
 Axiom.GetLucideCacheDir = function() return LUCIDE_CACHE_DIR end
@@ -641,8 +624,6 @@ local FONT_B = Enum.Font.GothamBold
 inst = function(cls, parent, props)
     local okNew, o = pcall(Instance.new, cls)
     if not okNew or not o then return nil end
-    -- 逐属性 pcall：真实执行器的类可能缺少某些属性(如 ScrollingFrame.HorizontalScrollBarEnabled)，
-    -- 单个属性赋值失败只跳过该项，不再让整个脚本崩溃
     if props then
         for k, v in pairs(props) do
             pcall(function() o[k] = v end)
@@ -660,7 +641,6 @@ local function grad(p, c1, c2, rot)
     return inst("UIGradient", p, { Color = ColorSequence.new({
         ColorSequenceKeypoint.new(0, c1), ColorSequenceKeypoint.new(1, c2) }), Rotation = rot or 0 })
 end
--- 微弱白色静态渐变：叠加在蓝色之上（白色 0.18 -> 0.02 的透明度渐变）
 local function whiteSheen(p, rot, a1, a2)
     return inst("UIGradient", p, {
         Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(1, 1, 1)),
@@ -677,8 +657,6 @@ local function label(p, txt, size, col, bold, xal)
         TextYAlignment = Enum.TextYAlignment.Center, RichText = false,
     })
 end
-
--- 估算文本渲染高度：优先 TextService 实测，失败按字数粗估（用于通知/登录段落高度自适应）
 local function estimateTextHeight(text, size, width)
     size = size or 12; width = width or 200
     local h = nil
@@ -701,9 +679,6 @@ local function estimateTextHeight(text, size, width)
     end
     return math.ceil(lines * (size * 1.45)) + 6
 end
-
--- ===== 全局 Notify：照抄 WasUI-Pro 通知系统（右上角堆叠 + 固定紧凑框架 + 蓝白渐变左边条）=====
--- WasUI-Pro 参数：Top=20 Spacing=8 Height=30 Width=250；本库保留 Type 变体的描边着色
 local N_TOP, N_SPACING, N_H, N_W = 20, 8, 30, 250
 local notifyState = nil
 local function notifyEnsure()
@@ -715,7 +690,6 @@ local function notifyEnsure()
     notifyState = { gui = gui, list = {}, seq = 0 }
     return notifyState
 end
--- 照抄 WasUI-Pro.updateAllNotificationPositions：按创建时间排序，重算每条的目标 Y
 local function notifyReflow()
     if not notifyState then return {} end
     local sorted = {}
@@ -726,7 +700,7 @@ local function notifyReflow()
     local targets = {}
     for i, n in ipairs(sorted) do
         local targetY = N_TOP + (i - 1) * (N_H + N_SPACING)
-        targets[n] = UDim2.new(1, -N_W - 10, 0, targetY)  -- 距屏幕右缘 10px
+        targets[n] = UDim2.new(1, -N_W - 10, 0, targetY)  
     end
     return targets
 end
@@ -744,24 +718,19 @@ function Axiom.Notify(o)
     if o.Type == "success" then borderColor = C.Green
     elseif o.Type == "warning" then borderColor = Color3.fromRGB(255, 189, 46)
     elseif o.Type == "error" then borderColor = Color3.fromRGB(255, 95, 86) end
-    -- 框架：固定 250×30，从屏幕右侧外滑入；CanvasGroup 按 UICorner 圆角真实裁剪内部指示条
     local frame = inst("CanvasGroup", st.gui, { Name = "Notice",
         Size = UDim2.fromOffset(N_W, N_H), Position = UDim2.new(1, N_W + 20, 0, N_TOP),
         BackgroundColor3 = C.Panel, BackgroundTransparency = 0.2, GroupTransparency = 0,
         ClipsDescendants = true, BorderSizePixel = 0, Visible = true, ZIndex = 9999 })
     corner(frame, 6)
     local strokeObj = stroke(frame, borderColor, 1, 0.5)
-    -- 左边缘蓝白渐变条（竖向渐变：Accent -> 白）：紧贴最左边缘（x=0），
-    -- CanvasGroup + UICorner 圆角裁剪令其在上下圆角处随边框收口，不溢出圆角
     local rail = inst("Frame", frame, { Name = "Rail", Size = UDim2.fromOffset(3, N_H),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 1 })
     corner(rail, 2); grad(rail, C.Accent, Color3.new(1, 1, 1), 90)
-    -- 标题：12 号粗体、左对齐（照抄 WasUI-Pro，起点右移让出渐变条）
     local tt = label(frame, title, 12, C.Text, true, Enum.TextXAlignment.Left)
     tt.Name = "Title"; tt.Size = UDim2.new(1, -16, 0, 14); tt.Position = UDim2.fromOffset(10, 2)
     tt.ZIndex = 2
-    -- 内容：10 号常规、左对齐，单行截断（固定高度框架不换行）
     local dd = label(frame, content, 10, C.Sub, false, Enum.TextXAlignment.Left)
     dd.Name = "Content"; dd.Size = UDim2.new(1, -16, 0, 12); dd.Position = UDim2.fromOffset(10, 16)
     dd.ZIndex = 2
@@ -769,12 +738,11 @@ function Axiom.Notify(o)
     local entry = { frame = frame, alive = true, seq = st.seq }
     st.seq = st.seq + 1
     st.list[#st.list + 1] = entry
-    notifyApply(notifyReflow(), 0.35)  -- 新通知滑入 + 已有通知重排
+    notifyApply(notifyReflow(), 0.35)  
     local function dismiss()
         if not entry.alive then return end
         entry.alive = false
-        notifyApply(notifyReflow(), 0.3)  -- 剩余通知上移补位
-        -- 当前通知滑出右侧并淡出（照抄 WasUI-Pro 退场）；用 tweenProp 统一处理 Completed 与 mock 兼容
+        notifyApply(notifyReflow(), 0.3)  
         tweenProp(frame, { Position = UDim2.new(1, N_W + 20, 0, frame.Position.Y.Offset),
             BackgroundTransparency = 1 }, 0.3, function()
             for i, x in ipairs(st.list) do if x == entry then table.remove(st.list, i); break end end
@@ -786,8 +754,6 @@ function Axiom.Notify(o)
     end
     return { Frame = frame, Dismiss = dismiss }
 end
-
--- ===== LoginInfo 启动页构建器（覆盖在主 UI 之上；加载脚本后切到主 UI）=====
 function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
     local W, H = 620, 440
     local leftW = math.floor(W * 2 / 3)
@@ -795,13 +761,10 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local bodyH = H - 34
     self._isLogin = true
     self._loginLoading = false
-
     local layer = inst("CanvasGroup", main, { Name = "LoginLayer",
         Size = UDim2.fromOffset(W, bodyH), Position = UDim2.fromOffset(0, 34),
         BackgroundColor3 = C.Bg, BorderSizePixel = 0, GroupTransparency = 0, ZIndex = 25 })
     self._loginLayer = layer
-
-    -- 左侧 2/3：大标题 + 更新日志段落（整行、自动换行、动态高度）
     local left = inst("ScrollingFrame", layer, { Size = UDim2.fromOffset(leftW, bodyH),
         Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 26,
@@ -837,17 +800,14 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         function obj:Get() return d.Text end
         return obj
     end
-
-    -- 右侧 1/3：圆形头像 + 用户名 + 两个按钮
     local right = inst("Frame", layer, { Size = UDim2.fromOffset(rightW, bodyH),
         Position = UDim2.fromOffset(leftW, 0), BackgroundColor3 = C.Side,
         BorderSizePixel = 0, ZIndex = 26 })
     inst("Frame", right, { Size = UDim2.fromOffset(1, bodyH),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
-    -- 右侧内容整体垂直居中：头像 + 名称 + 加载按钮
     local avSize = 96
-    local blockH = avSize + 12 + 26 + 18 + 40   -- 头像96 + 间距12 + 名称26 + 间距18 + 按钮40
+    local blockH = avSize + 12 + 26 + 18 + 40   
     local baseY = (bodyH - blockH) / 2
     local avatar = inst("ImageLabel", right, { Name = "Avatar", Size = UDim2.fromOffset(avSize, avSize),
         Position = UDim2.fromOffset((rightW - avSize) / 2, baseY), BackgroundColor3 = C.Row,
@@ -868,7 +828,6 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local uname = label(right, lpName, 15, C.Text, true, Enum.TextXAlignment.Center)
     uname.Size = UDim2.fromOffset(rightW - 20, 26)
     uname.Position = UDim2.fromOffset(10, baseY + avSize + 12); uname.ZIndex = 27
-
     local function loginBtn(name, txt, y, a1, a2, cb, textGrad)
         local b = inst("TextButton", right, { Name = name, Size = UDim2.fromOffset(rightW - 36, 40),
             Position = UDim2.fromOffset(18, y), BackgroundColor3 = a1,
@@ -886,8 +845,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local by = baseY + avSize + 12 + 26 + 18
     local loadBtn, loadTx = loginBtn("LoadScript", "加载脚本", by, C.Accent, C.Accent2, nil,
         { C.AccentW, Color3.new(1, 1, 1), 90 })
-    -- 加载脚本按钮：添加边框 + 强化蓝白渐变
-    stroke(loadBtn, C.AccentW, 1.5, 0.25)                       -- 蓝白边框
+    stroke(loadBtn, C.AccentW, 1.5, 0.25)                       
     local loadFill = nil
     for _, c in ipairs(loadBtn:GetChildren()) do
         if c.ClassName == "Frame" and c.Size.X.Scale == 1 and c.Size.Y.Scale == 1 then loadFill = c end
@@ -902,7 +860,6 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         ColorSequenceKeypoint.new(0, C.AccentW),
         ColorSequenceKeypoint.new(0.5, Color3.new(1, 1, 1)),
         ColorSequenceKeypoint.new(1, C.AccentW) }) end)
-    -- 加载中：右侧 loader-circle 持续旋转；文字左移一点点；延迟 1.5-2.5s 后进入主界面
     local spinConn = nil
     local function stopSpin()
         if spinConn then pcall(function() spinConn:Disconnect() end); spinConn = nil end
@@ -911,9 +868,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         if self._loginLoading then return end
         self._loginLoading = true
         loadBtn.Active = false
-        -- 文字向左微移
         tweenProp(loadTx, { Position = UDim2.new(0, -14, 0, 0) }, 0.25)
-        -- 右侧旋转 loader
         local loader = inst("ImageLabel", loadBtn, { Name = "LoadSpinner",
             Size = UDim2.fromOffset(18, 18),
             AnchorPoint = Vector2.new(0.5, 0.5),
@@ -937,7 +892,6 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
         end)
     end)
-
     function self:_showMainUI()
         if not self._isLogin then return end
         self._isLogin = false
@@ -950,8 +904,6 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             fadeAny(d, 0, 0.45)
         end
     end
-
-    -- 初始：隐藏主 UI 的三色点与内容区，仅显示登录层
     contentLayer.Visible = false
     for _, d in ipairs(dotList) do
         d.Visible = false; d.Active = false
@@ -959,18 +911,14 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     end
     return self
 end
-
 function Axiom.CreateWindow(opts)
     opts = opts or {}
     local self = setmetatable({ _rows = 0, _tabs = {}, _activeTab = nil }, Axiom)
-    -- IgnoreGuiInset 让 fromScale(1,1) 覆盖整屏（含 Roblox Topbar 区域），
-    -- 否则入场黑色蒙版会被 TopbarApp 裁掉顶部一条
     local gui = inst("ScreenGui", nil, { Name = "AxiomUI", ResetOnSpawn = false,
         IgnoreGuiInset = true, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, DisplayOrder = 100000 })
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
-    -- Folder 签名：决定资源与配置落盘目录 Axiom/<Folder>/
     local subFolder = sanitizeName(opts.Folder) or "Default"
     local assetDir = ROOT_FOLDER .. "/" .. subFolder
     local configDir = assetDir .. "/" .. CONFIG_DIR_NAME
@@ -982,7 +930,6 @@ function Axiom.CreateWindow(opts)
         and (assetDir .. "/config.json")
         or (configDir .. "/" .. self._configName .. ".json")
     self._config = {}
-    -- 磁盘目录 + Roblox Folder 层级（config 值实例挂在 Config 子 Folder 下）
     ensureFolder(ROOT_FOLDER); ensureFolder(assetDir); ensureFolder(configDir)
     local rootFolder = inst("Folder", holder, { Name = ROOT_FOLDER })
     local subFolderObj = inst("Folder", rootFolder, { Name = subFolder })
@@ -997,20 +944,14 @@ function Axiom.CreateWindow(opts)
         BorderSizePixel = 0, ZIndex = 1, GroupTransparency = 1 })
     inst("UIScale", main, { Scale = SCALE })
     corner(main, 12)
-    local mainStroke = stroke(main, C.Border, 1.5, 1)  -- 初始隐藏边框：真实执行器 UIStroke 不受 GroupTransparency 约束
-    -- 注册"完全可见"基准为 0 并把当前值保持隐藏，reveal 时 fade(main,0) 会按基准把它补间显现，
-    -- 避免入场动画收敛途中主窗口边框提前露出
+    local mainStroke = stroke(main, C.Border, 1.5, 1)  
     if mainStroke then pcall(function() strokeBase[mainStroke] = 0; mainStroke.Transparency = 1 end) end
     self.main = main
-    -- 窗口区域输入拦截层：仅覆盖窗口本体(fromScale 1,1)，随窗口缩放/移动/最小化自动贴合；
-    -- 吸收窗口内空白处的点击/触摸防止穿透到 Roblox，窗口外区域不再拦截、允许点击穿透
     local inputBlocker = inst("TextButton", main, { Name = "InputBlocker",
         Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
         BackgroundTransparency = 1, BorderSizePixel = 0, Text = "",
         AutoButtonColor = false, Active = true, Visible = true, ZIndex = 1 })
     self._inputBlocker = inputBlocker
-    -- main 保持隐藏(GroupTransparency=1)，待图标/壁纸等资源全部就绪后再淡入（见资源门控）
-
     local bar = inst("Frame", main, { Size = UDim2.new(1, 0, 0, 34), BackgroundColor3 = C.Bar,
         BorderSizePixel = 0, ZIndex = 3 })
     inst("UICorner", bar, { CornerRadius = UDim.new(0, 12) })
@@ -1037,14 +978,10 @@ function Axiom.CreateWindow(opts)
         AutoButtonColor = false, Visible = false, ZIndex = 5 })
     applyIcon(plusBtn, "plus", C.Accent)
     connect(plusBtn.MouseButton1Click, function() self:_expand() end)
-
-    -- 内容层：包裹选项卡区与控件区，供黄点最小化时整块渐隐
     local contentLayer = inst("CanvasGroup", main, { Name = "ContentLayer", Size = UDim2.fromOffset(W, H - 34),
         Position = UDim2.fromOffset(0, 34), BackgroundTransparency = 1,
         GroupTransparency = 0, BorderSizePixel = 0, ZIndex = 2 })
     self._contentLayer = contentLayer
-
-    -- 壁纸：仅主 UI 内可见（登录层覆盖其上时不显示）；自动裁剪填充+圆角；暗化遮罩保证控件可读
     self._wallpaper = nil
     local bgSrc = opts.Background
     local hasBg = type(bgSrc) == "string" and #bgSrc > 0
@@ -1060,7 +997,6 @@ function Axiom.CreateWindow(opts)
             BorderSizePixel = 0, ZIndex = 1 })
         self._wallpaper = wallpaper
     end
-
     local side = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(176, H - 34),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Side,
         BackgroundTransparency = hasBg and 0.45 or 0, BorderSizePixel = 0, ZIndex = 2,
@@ -1069,72 +1005,52 @@ function Axiom.CreateWindow(opts)
         CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self._tabCount = 0
     self._side = side
-
     local detail = inst("ScrollingFrame", contentLayer, { Size = UDim2.fromOffset(W - 176, H - 34),
         Position = UDim2.fromOffset(176, 0), BackgroundTransparency = 1, ZIndex = 2,
         ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
         HorizontalScrollBarInset = Enum.ScrollBarInset.None, VerticalScrollBarInset = Enum.ScrollBarInset.None,
         CanvasSize = UDim2.new(0, 0, 0, H - 34), ClipsDescendants = false })
     self.body = detail
-
-    -- ===== 黄点最小化 / plus 展开 =====
     local TITLE_W = 150
     local btBasePos = UDim2.fromOffset(160, 7)
     local btBaseAlign = Enum.TextXAlignment.Center
     local barBaseW = UDim2.new(1, 0, 0, 34)
     self._minimized = false
-
     function self:_minimize()
         if self._minimized then return end
         self._minimized = true
-        -- 立即禁用三色点交互（避免淡出过程中误触），Visible 待淡出完成后再关
         for _, d in ipairs(dotList) do pcall(function() d.Active = false end) end
-        -- 内容区 / 选项卡区整块渐隐
         fade(contentLayer, 1, 0.3, function()
             contentLayer.Visible = false
             for _, d in ipairs(dotList) do pcall(function() d.Visible = false end) end
         end)
-        -- 三色点渐隐
         for _, d in ipairs(dotList) do fadeAny(d, 1, 0.3) end
-        -- UI 框架向上收起：高度收到仅剩标题栏、宽度从右向左收起至标题宽度（不再留长条）
         tweenProp(main, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
-        -- 标题栏从右向左收起，仅剩标题文字区（含右侧 plus 预留位）
         tweenProp(bar, { Size = UDim2.fromOffset(TITLE_W, 34) }, 0.34)
-        -- 标题文字左移并改左对齐（延迟到三色点渐隐完成后再移动，避免文字压到尚未消失的点上）
-        -- 纯 Offset 定位，配合 bar 收起做精确线性位移，不再用 Scale+Offset 混合插值导致移过头
-        tweenProp(bt, { Position = UDim2.fromOffset(10, 7), Size = UDim2.fromOffset(TITLE_W - 40, 20) }, 0.3, nil, 0.32)
+        tweenProp(bt, { Position = UDim2.fromOffset(10, 7), Size = UDim2.fromOffset(TITLE_W - 40, 20) }, 0.3)
         pcall(function() bt.TextXAlignment = Enum.TextXAlignment.Left end)
-        -- 预留位置后显示 plus 图标
         plusBtn.Visible = true
         tweenProp(plusBtn, { ImageTransparency = 0 }, 0.3, nil, 0.18)
     end
-
     function self:_expand()
         if not self._minimized then return end
         self._minimized = false
-        -- plus 先淡出
         tweenProp(plusBtn, { ImageTransparency = 1 }, 0.2, function() plusBtn.Visible = false end, 0.2)
-        -- 标题栏从右向左还原为全宽
         tweenProp(bar, { Size = barBaseW }, 0.34)
-        -- 标题文字回居中
         tweenProp(bt, { Position = btBasePos, Size = UDim2.fromOffset(300, 20) }, 0.34)
         pcall(function() bt.TextXAlignment = btBaseAlign end)
-        -- UI 框架向下展开还原高度（逆向动画）
         tweenProp(main, { Size = UDim2.fromOffset(W, H) }, 0.34, function()
             contentLayer.Visible = true
             for _, d in ipairs(dotList) do
                 pcall(function() d.Visible = true; d.Active = true end)
             end
         end, 0.1)
-        -- 内容区 / 三色点渐显还原（先恢复可见再渐显，避免隐藏态下渐显不可见）
         fade(contentLayer, 0, 0.3)
         for _, d in ipairs(dotList) do
             pcall(function() d.Visible = true; d.Active = true end)
             fadeAny(d, 0, 0.3)
         end
     end
-
-    -- ===== 拖动标题栏 / 标题文字移动窗口（UserInputService 全局监听，鼠标移出标题栏仍可拖）=====
     local UIS = nil
     pcall(function() UIS = game:GetService("UserInputService") end)
     local dragging, dragStart, mainStart = false, nil, nil
@@ -1150,8 +1066,8 @@ function Axiom.CreateWindow(opts)
     local function attachDrag(target)
         connect(target.InputBegan, startDrag)
     end
-    attachDrag(bar)   -- 整个标题栏可拖（含三色点旁边的空白区）
-    attachDrag(bt)    -- 标题文字本身也可拖
+    attachDrag(bar)   
+    attachDrag(bt)    
     if UIS then
         connect(UIS.InputChanged, function(input)
             if not dragging then return end
@@ -1168,14 +1084,12 @@ function Axiom.CreateWindow(opts)
             end
         end)
     end
-
     function self:AddTab(name, icon)
         self._tabCount = self._tabCount + 1
         local i = self._tabCount
         local my = 22 + (i - 1) * 44
         local active = (i == 1)
         local side = self._side
-        -- 每个选项卡拥有独立内容容器（挂在 detail 内，与 detail 同坐标系）
         local content = inst("Frame", detail, { Size = UDim2.fromScale(1, 1),
             BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 2,
             ClipsDescendants = false, Visible = active })
@@ -1183,7 +1097,6 @@ function Axiom.CreateWindow(opts)
             Position = UDim2.fromOffset(8, my - 5), BackgroundColor3 = C.Panel,
             BackgroundTransparency = active and 0.4 or 1, BorderSizePixel = 0, ZIndex = 1 })
         corner(bg, 8)
-        -- 蓝白竖向渐变指示条（蓝 -> 白，Rotation=90 竖向）；初始非激活条长度为 0
         local act = inst("Frame", bg, { Size = UDim2.fromOffset(3, active and 26 or 0),
             Position = UDim2.fromOffset(2, 4), BackgroundColor3 = C.Accent,
             BackgroundTransparency = active and 0 or 1, BorderSizePixel = 0, ZIndex = 4 })
@@ -1194,7 +1107,6 @@ function Axiom.CreateWindow(opts)
         applyIcon(mi, icon or "home", active and C.Accent or C.Sub)
         local mt = label(side, name or ("Tab " .. i), 13, active and C.Text or C.Sub, active)
         mt.Size = UDim2.fromOffset(120, 24); mt.Position = UDim2.fromOffset(44, my); mt.ZIndex = 3
-        -- 覆盖整行的透明点击热区
         local hit = inst("TextButton", side, { Size = UDim2.fromOffset(160, 34),
             Position = UDim2.fromOffset(8, my - 5), BackgroundTransparency = 1,
             BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 5 })
@@ -1211,11 +1123,9 @@ function Axiom.CreateWindow(opts)
         function tab:AddColorPicker(o) return self._win:_row("ColorPicker", o, self) end
         return tab
     end
-
     function self:SelectTab(tab)
         if not tab or self._activeTab == tab then return end
         self._activeTab = tab
-        -- 内容容器显隐 + 滚动高度切到目标 tab
         for _, t in ipairs(self._tabs) do
             if t._content then t._content.Visible = (t == tab) end
         end
@@ -1223,10 +1133,8 @@ function Axiom.CreateWindow(opts)
         pcall(function() detail.CanvasPosition = UDim2.fromOffset(0, 0) end)
         for _, t in ipairs(self._tabs) do
             local on = (t == tab)
-            -- 指示条：新条渐显并伸长到 26；旧条缩短到 0 并渐隐直到消失
             tweenProp(t._act, { Size = UDim2.fromOffset(3, on and 26 or 0),
                 BackgroundTransparency = on and 0 or 1 }, on and 0.28 or 0.22)
-            -- 高亮背景 + 图标/文字高亮同步
             tweenProp(t._bg, { BackgroundTransparency = on and 0.4 or 1 }, 0.22)
             pcall(function() t._mi.ImageColor3 = on and C.Accent or C.Sub end)
             t._mt.TextColor3 = on and C.Text or C.Sub
@@ -1234,7 +1142,6 @@ function Axiom.CreateWindow(opts)
         end
         return tab
     end
-
     function self:_row(kind, o, tab)
         o = o or {}
         local owner = tab or self._activeTab
@@ -1308,7 +1215,6 @@ function Axiom.CreateWindow(opts)
             corner(bfill, 7); grad(bfill, C.Accent, C.AccentW, 0); whiteSheen(bfill, 0)
             local btxt = label(b, o.Title or "Apply", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
             btxt.Size = UDim2.fromScale(1, 1); btxt.ZIndex = 5
-            -- 按压反馈：按下时轻微缩小并压暗，松开/移出还原
             local bScale = inst("UIScale", b, { Scale = 1 })
             local press = inst("Frame", b, { Size = UDim2.fromScale(1, 1),
                 BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
@@ -1397,12 +1303,10 @@ function Axiom.CreateWindow(opts)
             local MENU_MAX_H = 160
             local contentH = 8 + #options * 26
             local menuH = contentH < MENU_MAX_H and contentH or MENU_MAX_H
-            -- Active=true：菜单整体捕获点击/触摸，阻止穿透到窗口下方控件
             local menu = inst("CanvasGroup", main, { Name = "DropMenu", Size = UDim2.fromOffset(140, menuH),
                 Position = UDim2.fromOffset(176 + rx - 140, 34 + y + 36), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 14, Active = true })
             corner(menu, 7); stroke(menu, C.Line, 1, 0)
-            -- 滑动容器：高度固定为 menuH，仅纵向滚动，禁用左右滑动
             local scroller = inst("ScrollingFrame", menu, { Name = "DropScroller",
                 Size = UDim2.fromScale(1, 1), Position = UDim2.fromOffset(0, 0),
                 CanvasSize = UDim2.new(0, 0, 0, contentH),
@@ -1431,14 +1335,12 @@ function Axiom.CreateWindow(opts)
             end
             local function openMenu()
                 if menuOpen then return end
-                -- 关闭同一窗口内其它已展开的下拉/调色面板，避免多个菜单叠加
                 pcall(function()
                     for _, fn in ipairs(self._closePopups or {}) do if fn ~= closeMenu then fn() end end
                 end)
                 menuOpen = true
                 menu.Visible = true
                 fade(menu, 0, 0.18)
-                -- 点击空白自动收起：菜单展开期间监听全局按下，命中区域外即关闭
                 pcall(function()
                     local uis = game:GetService("UserInputService")
                     if not uis then return end
@@ -1494,11 +1396,8 @@ function Axiom.CreateWindow(opts)
             end
             registerConfig(self, obj, o, "Dropdown")
         elseif kind == "ColorPicker" then
-            -- 照抄 AsLab 的完整 HSV 取色器：SV 面板 + 色相条 + 预览 + HEX + 独占拖动会话
             local def = isColor3(o.Default) and o.Default or Color3.fromRGB(255, 96, 96)
             local h, sat, val = colorToHSV(def)
-
-            -- 行内色块（显示当前色 + HEX 文本 + 黑色描边文字）
             local sw = inst("TextButton", host, { Size = UDim2.fromOffset(110, 24),
                 Position = UDim2.fromOffset(rx - 110, y + 7), BackgroundColor3 = def,
                 BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 3 })
@@ -1506,8 +1405,6 @@ function Axiom.CreateWindow(opts)
             local swlbl = label(sw, "", 12, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
             swlbl.Size = UDim2.fromScale(1, 1); swlbl.ZIndex = 4
             local lstroke = stroke(swlbl, Color3.new(0, 0, 0), 1, 0.35)
-
-            -- 居中取色面板（挂在 main 上，覆盖窗口中央）
             local pw, ph = 210, 158
             local panel = inst("CanvasGroup", main, { Name = "ColorPalette", Size = UDim2.fromOffset(pw, ph),
                 Position = UDim2.new(0.5, -pw / 2, 0.5, -ph / 2), BackgroundColor3 = Color3.fromRGB(20, 20, 26),
@@ -1516,10 +1413,8 @@ function Axiom.CreateWindow(opts)
             panel.ClipsDescendants = true
             self._colorPanels = self._colorPanels or {}
             table.insert(self._colorPanels, panel)
-
             local pad = 10
             local svW, svH = pw - pad * 2, 90
-            -- SV 板：底层纯色随色相，叠加白色横向渐变 + 黑色纵向渐变
             local sv = inst("Frame", panel, { Name = "SV", Size = UDim2.fromOffset(svW, svH),
                 Position = UDim2.fromOffset(pad, pad), BackgroundColor3 = hsvToColor(h, 1, 1),
                 BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 41 })
@@ -1538,8 +1433,6 @@ function Axiom.CreateWindow(opts)
                 BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 43 })
             inst("UICorner", cursor, { CornerRadius = UDim.new(1, 0) })
             stroke(cursor, Color3.new(1, 1, 1), 1.5, 0)
-
-            -- 色相条：彩虹渐变 + 白色竖条游标
             local hueY = pad + svH + 8
             local hue = inst("Frame", panel, { Name = "Hue", Size = UDim2.fromOffset(svW, 12),
                 Position = UDim2.fromOffset(pad, hueY), BorderSizePixel = 0, ClipsDescendants = true, ZIndex = 41 })
@@ -1555,15 +1448,12 @@ function Axiom.CreateWindow(opts)
             local hcur = inst("Frame", hue, { Name = "HueCursor", Size = UDim2.fromOffset(4, 16),
                 BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, ZIndex = 43 })
             corner(hcur, 2)
-
-            -- 底部预览块 + HEX 文本
             local prev = inst("Frame", panel, { Name = "Preview", Size = UDim2.fromOffset(22, 22),
                 Position = UDim2.fromOffset(pad, ph - pad - 22), BorderSizePixel = 0, ZIndex = 41 })
             corner(prev, 5); stroke(prev, C.Border, 1, 0.4)
             local hexLabel = label(panel, "", 12, C.Text, false, Enum.TextXAlignment.Left)
             hexLabel.Size = UDim2.new(1, -pad * 2 - 34, 0, 22)
             hexLabel.Position = UDim2.fromOffset(pad + 30, ph - pad - 22); hexLabel.ZIndex = 41
-
             local function toHex(c)
                 return string.format("#%02X%02X%02X",
                     math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
@@ -1581,8 +1471,6 @@ function Axiom.CreateWindow(opts)
                 obj.Value = c
                 if fire then emit(obj, c) end
             end
-
-            -- 独占式指针会话：SV 板与色相条共用一条拖动链路（照抄 AsLab 防残留）
             local function releaseGrab()
                 local g = self._colorGrab
                 if not g then return end
@@ -1629,8 +1517,6 @@ function Axiom.CreateWindow(opts)
                 h = clamp((px - p.X) / math.max(1, sz.X), 0, 1)
                 refresh(true)
             end
-
-            -- 面板底层触摸拦截：点空白处不穿透；ZIndex 低于两块命中区
             inst("TextButton", panel, { Name = "ColorPanelHit", Size = UDim2.fromScale(1, 1),
                 BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 42, Active = true })
             local svHit = inst("TextButton", panel, { Name = "SVHit", Size = UDim2.fromOffset(svW, svH),
@@ -1647,7 +1533,6 @@ function Axiom.CreateWindow(opts)
                 local t = i and i.UserInputType
                 if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then grab(setHue, i) end
             end)
-
             local function closePalette()
                 if not panel.Visible then return end
                 releaseGrab()
@@ -1665,7 +1550,6 @@ function Axiom.CreateWindow(opts)
             connect(sw.MouseButton1Click, function()
                 if panel.Visible then closePalette() else openPalette() end
             end)
-
             refresh(false)
             function obj:Set(c)
                 if isColor3(c) then
@@ -1680,7 +1564,6 @@ function Axiom.CreateWindow(opts)
         function obj:Callback(fn) obj._cb = fn; return obj end
         return obj
     end
-
     function self:ShowNotify(o)
         o = o or {}
         local toast = inst("CanvasGroup", main, { Size = UDim2.fromOffset(260, 60),
@@ -1702,7 +1585,6 @@ function Axiom.CreateWindow(opts)
         end
         return toast
     end
-
     local confirm = inst("CanvasGroup", main, { Name = "CloseConfirm", Size = UDim2.fromOffset(300, 168),
         Position = UDim2.new(0.5, -150, 0.5, -84), BackgroundColor3 = C.Panel,
         BorderSizePixel = 0, GroupTransparency = 1, Visible = false, ZIndex = 46 })
@@ -1733,16 +1615,15 @@ function Axiom.CreateWindow(opts)
         BorderSizePixel = 0, Text = "", AutoButtonColor = false, Visible = false, ZIndex = 45 })
     corner(shade, 12)
     self._shade = shade
-
     local function hideConfirm()
         fade(confirm, 1, 0.18, function() confirm.Visible = false end)
         tweenShadeAlpha(shade, 1, 0.2)
-        tweenLighting(false, 0.3)  -- 恢复 Lighting 原值
+        tweenLighting(false, 0.3)  
     end
     function self:_openCloseConfirm()
         shade.Visible = true; confirm.Visible = true
-        tweenShadeAlpha(shade, 0.35, 0.3)  -- 手动循环渐变半透明黑遮罩
-        tweenLighting(true, 0.3)           -- Lighting 环境变暗（模仿 TrashHub）
+        tweenShadeAlpha(shade, 0.35, 0.3)  
+        tweenLighting(true, 0.3)           
         fade(confirm, 0, 0.22)
     end
     function self:_closeWindow()
@@ -1756,14 +1637,9 @@ function Axiom.CreateWindow(opts)
     connect(noBtn.MouseButton1Click, function() hideConfirm() end)
     connect(yesBtn.MouseButton1Click, function() self:_closeWindow() end)
     connect(shade.MouseButton1Click, function() hideConfirm() end)
-
-    -- LoginInfo 启动页：覆盖在主 UI 之上，加载脚本后切入主 UI
     if opts.LoginInfo == true then
         Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList)
     end
-
-    -- ===== 入场动画层：画面渐暗 + 中心大标题 + 全屏直角边框收敛为窗口圆角 =====
-    -- 资源（含壁纸）全部就绪后才启动，避免边框先于壁纸出现
     local introLayer = inst("CanvasGroup", gui, { Name = "IntroLayer", Size = UDim2.fromScale(1, 1),
         Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
         GroupTransparency = 0, BorderSizePixel = 0, Visible = false, ZIndex = 60 })
@@ -1773,8 +1649,8 @@ function Axiom.CreateWindow(opts)
     local introBorder = inst("Frame", introLayer, { Name = "IntroBorder", Size = UDim2.fromScale(1, 1),
         Position = UDim2.fromOffset(0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, ZIndex = 62 })
-    local introCorner = corner(introBorder, 0)              -- 直角起步
-    local introStroke = stroke(introBorder, C.Border, 3, 1) -- 初始隐藏，随动画淡入/随层淡出
+    local introCorner = corner(introBorder, 0)              
+    local introStroke = stroke(introBorder, C.Border, 3, 1) 
     local introTitle = inst("TextLabel", introLayer, { Name = "IntroTitle",
         Text = opts.Title or "AXIOM", Font = Enum.Font.GothamBold, TextSize = 56,
         TextColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1,
@@ -1783,27 +1659,22 @@ function Axiom.CreateWindow(opts)
         TextTransparency = 1, ZIndex = 63 })
     self._intro = { layer = introLayer, dim = introDim, border = introBorder,
         corner = introCorner, stroke = introStroke, title = introTitle }
-
-    -- 收敛终点：与 main 的最终视觉矩形对齐（main 带 UIScale=SCALE，视觉尺寸 W*SCALE×H*SCALE 居中）
     local finW, finH = W * SCALE, H * SCALE
     local finSize = UDim2.fromOffset(finW, finH)
     local finPos = UDim2.new(0.5, -finW / 2, 0.5, -finH / 2)
     local finCorner = 12 * SCALE
     local titleEndPos = UDim2.new(0.5, 0, 0.5, -finH / 2 + 11)
-    local CURVE = Enum.EasingStyle.Quint -- 曲线变速（缓入缓出）
+    local CURVE = Enum.EasingStyle.Quint 
     local function playIntro(done)
         introLayer.Visible = true
-        -- 1) 画面渐暗 + 大字淡入 + 全屏直角边框描边淡入
         tweenEx(introDim, { BackgroundTransparency = 0.72 }, 0.3, CURVE, Enum.EasingDirection.Out)
         tweenEx(introTitle, { TextTransparency = 0 }, 0.26, CURVE, Enum.EasingDirection.Out)
         tweenEx(introStroke, { Transparency = 0 }, 0.26, CURVE, Enum.EasingDirection.Out)
-        -- 2) 同步收敛：边框全屏直角 -> 窗口圆角；标题缩小并平滑上移（曲线变速），到位后终止
         local CONV = 0.82
         tweenEx(introBorder, { Size = finSize, Position = finPos }, CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
         tweenEx(introCorner, { CornerRadius = UDim.new(0, finCorner) }, CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
         tweenEx(introTitle, { Size = UDim2.fromOffset(240, 26), TextSize = 12, Position = titleEndPos },
             CONV, CURVE, Enum.EasingDirection.InOut, nil, 0.28)
-        -- 3) 到位后：入场层淡出，主 UI 淡入，动画层销毁
         local function finish()
             fade(introLayer, 1, 0.28)
             tweenEx(introDim, { BackgroundTransparency = 1 }, 0.28)
@@ -1818,8 +1689,6 @@ function Axiom.CreateWindow(opts)
             finish()
         end
     end
-
-    -- ===== 资源门控：图标模块 / 背景图（含壁纸实际下载）全部就绪后才启动入场动画 =====
     local shown = false
     local function reveal()
         if shown then return end
@@ -1832,7 +1701,6 @@ function Axiom.CreateWindow(opts)
         if self._wallpaper then
             local asset = resolveImage(bgSrc, assetDir)
             pcall(function() self._wallpaper.Image = asset or "" end)
-            -- 等壁纸真正加载完成后才入场（避免边框先于壁纸出现）
             local cpOk, cp = pcall(function() return game:GetService("ContentProvider") end)
             if cpOk and cp and type(cp.PreloadAsync) == "function" then
                 local fired = false
@@ -1842,7 +1710,6 @@ function Axiom.CreateWindow(opts)
                     reveal()
                 end
                 pcall(function() cp:PreloadAsync({ self._wallpaper }, function() ready() end) end)
-                -- 兜底：部分执行器/无头环境回调不触发，短延时后强制入场
                 if type(task) == "table" and type(task.delay) == "function" then
                     pcall(task.delay, 0.3, ready)
                 else
@@ -1858,14 +1725,11 @@ function Axiom.CreateWindow(opts)
     else
         preload()
     end
-    -- 兜底：极端情况下预加载被阻塞，最多 8 秒后强制入场
     if type(task) == "table" and type(task.delay) == "function" then
         pcall(task.delay, 8, reveal)
     end
     return self
 end
-
--- ===== Config 后端 API（挂在 Window 实例上，照抄 AsLab 的 Save/Load/Delete/Rename/List 行为）=====
 local function listConfigFiles(win)
     local out, seen = {}, {}
     local dir = win._configDir or (win._assetDir and (win._assetDir .. "/" .. CONFIG_DIR_NAME))
@@ -1985,5 +1849,4 @@ function Axiom:GetConfigName() return self._configName or DEFAULT_CONFIG end
 function Axiom:GetConfigPath() return self._configPath end
 function Axiom:GetConfigDir() return self._configDir end
 function Axiom:GetAssetDir() return self._assetDir end
-
 return Axiom
