@@ -30,6 +30,13 @@ local Win = Axiom.CreateWindow({
     LoginInfo = true,
     LoginTitle = "版本更新日志",
     Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
+    -- 多语言：Lang 为默认语言（缺省 zh），Languages 追加可选语言，Locales 追加或覆盖词条。
+    Lang = "zh",
+    Languages = { { Code = "ja", Label = "日本語" } },
+    Locales = {
+        en = { ["demo.master"] = "Master Switch", ["demo.masterDesc"] = "Enable all features" },
+        ja = { ["demo.master"] = "メインスイッチ" },
+    },
     -- KeySystem 演示：输入框占位文字可改；点击左侧 user-key 图标可自定义行为（这里演示复制卡密到剪贴板）。
     -- 正式使用时把 KeyCheck 换成自己的后端接口，或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }。
     KeySystem = true,
@@ -77,7 +84,9 @@ Tab:AddParagraph({
     Text = "主从分栏布局：左侧文字菜单，右侧表格化对齐控件。",
 })
 Tab:AddToggle({
-    Title = "Master Switch", Desc = "启用全部功能", Icon = "toggle-right", Default = true, ConfigKey = "master",
+    Title = "主开关", TitleKey = "demo.master",
+    Desc = "启用全部功能", DescKey = "demo.masterDesc",
+    Icon = "toggle-right", Default = true, ConfigKey = "master",
     Callback = function(v) toast("主开关", "已" .. (v and "启用" or "关闭") .. "全部功能", v and "success" or "warning") end,
 })
 local Slider = Tab:AddSlider({
