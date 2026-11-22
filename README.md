@@ -178,6 +178,29 @@ Axiom.Notify({ Win = Win, TitleKey = "settings.savedTitle", TextKey = "settings.
 
 控件对象统一提供 `SetValue` / `Set` / `Get` / `Callback` 等方法，下拉另含 `Select` / `ClearSelection` / `IsSelected`。给控件传 `o.ConfigKey = "xxx"` 即纳入配置管理（Toggle / Slider / Dropdown / ColorPicker）。
 
+#### 动态改值
+
+控件的值可以在任意时刻被代码改写，界面、`Value` 字段与配置通道会同步更新，不需要重建窗口或模拟点击：
+
+```lua
+local Slider = Tab:AddSlider({ Title = "音量", Min = 0, Max = 100, Default = 20, ConfigKey = "volume" })
+
+Slider:SetValue(70)        -- 静默改值：界面同步，不触发 Callback
+Slider:Set(70, true)       -- 改值并触发一次 Callback
+Slider:Get()               -- 读取当前值
+```
+
+| 控件 | 改值方法 | 读值 | 补充 |
+| --- | --- | --- | --- |
+| `AddParagraph` | `SetText(v)` / `Set(v[, fire])` / `SetValue` | `Get()` | 文本即时刷新 |
+| `AddToggle` | `SetValue(v[, fire])` / `Set` | `Get()` | 开关状态与动画同步 |
+| `AddSlider` | `SetValue(v[, fire])` / `Set` | `Get()` | 超出 `Min`~`Max` 自动夹取 |
+| `AddDropdown` | `Set(v[, fire])` / `SetValue` | `Get()` | 单选传字符串，多选传数组；另有 `Select` / `ClearSelection` / `IsSelected` |
+| `AddColorPicker` | `Set(c[, fire])` / `SetValue` | `Get()` | 仅接受 `Color3`，非法值忽略 |
+
+`fire` 省略时为静默改值，只更新界面与状态，不触发 `Callback`，适合“程序回填”场景；传 `true` 时按用户操作处理，回调收到新值。带 `ConfigKey` 的 Toggle / Slider / Dropdown / ColorPicker 在改值时会同步刷新 `Config` 文件夹中对应的 `BoolValue` / `NumberValue` / `StringValue` / `Color3Value`，`SaveConfig` 落到文件的值也是最新值。
+
+
 ### Config（Window 方法）
 
 | 方法 | 说明 |
