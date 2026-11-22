@@ -68,7 +68,7 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 | `Window:AddTab(name, icon, titleKey)` | 添加选项卡，返回 `Tab`；`titleKey` 为可选页签翻译键 |
 | `Window:AddLoginParagraph(o)` | 启动页添加整行段落 |
 | `Window:ShowNotify(o)` | 窗口内右下角简易通知 |
-| `Axiom.Notify(o)` | 全局堆叠通知，`o`：`Title`、`Text`/`Info`、`Duration`、`Type`；返回 `{ Frame, Dismiss() }` |
+| `Axiom.Notify(o)` | 全局堆叠通知，`o`：`Title`、`Text`/`Info`、`Duration`、`Type`、`Color`，传 `Win` + `TitleKey` / `TextKey` 后通知文字随语言切换实时更新；返回 `{ Frame, Dismiss() }` |
 | `Window:SetLanguage(code)` / `GetLanguage()` | 切换 / 读取当前界面语言 |
 | `Window:GetLanguages()` | 可用语言列表（`{ Code, Label }`） |
 | `Axiom.GetLucideCacheDir()` | 图标缓存目录 |
@@ -156,7 +156,14 @@ Tab:AddToggle({ Title = "主开关", TitleKey = "demo.master", Desc = "启用全
 Tab:AddParagraph({ Title = "说明", Text = "默认文本", TextKey = "demo.body" })
 ```
 
-内置词条键为 `login.*`、`settings.*`、`close.*`、`control.*`；缺失词条会依次回退到 `Locales`、内置语言包、传入的 `Title` / `Desc`。也可以用 `Translator = function(key, lang, fallback) ... end` 完全接管翻译。
+内置词条键为 `login.*`、`settings.*`、`close.*`、`control.*`、`account.*`、`key.*`、`bar.*`、`notify.title`；缺失词条会依次回退到 `Locales`、内置语言包、传入的 `Title` / `Desc`。也可以用 `Translator = function(key, lang, fallback) ... end` 完全接管翻译。
+
+已绑定到翻译键的文本（登录页文案、设置面板、关闭确认与感谢语、标题栏关闭提示、账号生日、卡密校验失败原因、通知内容）在切换语言时立即刷新，不需要重建窗口。自定义通知也可跟随语言：
+
+```lua
+Axiom.Notify({ Win = Win, TitleKey = "settings.savedTitle", TextKey = "settings.savedText",
+    Title = "设置", Text = "你的设定已保存!", Type = "success" })
+```
 
 ### Tab 控件
 
