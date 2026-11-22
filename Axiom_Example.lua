@@ -3,6 +3,7 @@ local LIB_URLS = {
     "https://cdn.jsdelivr.net/gh/WasKKal/Axiom-UI-Library@main/Axiom.lua",
 }
 local Axiom = nil
+local failReason = nil
 for _, url in ipairs(LIB_URLS) do
     local ok, mod = pcall(function()
         local src = game:HttpGet(url)
@@ -15,9 +16,14 @@ for _, url in ipairs(LIB_URLS) do
         Axiom = mod
         break
     end
+    if ok then
+        if failReason == nil then failReason = "库返回内容无效" end
+    else
+        failReason = tostring(mod)
+    end
 end
 if not Axiom then
-    warn("[Axiom] 加载库失败，请检查网络或仓库地址")
+    warn("[Axiom] 加载库失败：" .. tostring(failReason or "未知原因"))
     return
 end
 
