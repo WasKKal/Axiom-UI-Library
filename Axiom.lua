@@ -780,7 +780,8 @@ local C = {
     DeepGray1 = Color3.fromRGB(78, 84, 94), DeepGray2 = Color3.fromRGB(56, 61, 70),
 }
 local FONT = Enum.Font.SourceSans
-local FONT_B = Enum.Font.GothamBoldlocal FONT_FACE, FONT_FACE_B, USE_FONT_FACE = nil, nil, false
+local FONT_B = Enum.Font.GothamBold
+local FONT_FACE, FONT_FACE_B, USE_FONT_FACE = nil, nil, false
 pcall(function()
     local FC = Font
     if type(FC) ~= "table" then return end
