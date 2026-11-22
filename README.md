@@ -21,6 +21,7 @@
 - 💾 **Config 系统**：控件 `ConfigKey` 绑定 + 命名配置存取（保存 / 载入 / 删除 / 重命名 / 列表），落盘到 `Axiom/<Folder>/`。
 - 🔐 **登录启动页**：可选启动页，左侧更新日志标题常驻顶部、正文独立滚动；头像 / 用户名 / 加载按钮居中，加载动画结束后切入主界面。
 - 🔑 **卡密验证（KeySystem）**：开启后按钮文案变为「验证密钥并载入」，按钮上方出现带 `user-key` 图标的卡密输入框，占位文字与图标点击行为均可自定义；支持 Luarmor 内置适配、自定义 HTTP 接口或完全自定义校验函数。
+- 🌐 **界面多语言**：设置面板内置语言下拉（默认中文，内置 `zh` / `en`），支持追加语言包、覆盖词条、为页签与控件指定翻译键，也可用 `Translator` 完全接管。
 - 🖼️ **图标缓存**：Lucide v6 图标首次加载后缓存到本地，后续启动优先读取本地，无需重复联网。
 - 🔌 **零依赖单文件**：`Axiom.lua` 独立引入，兼容主流 Roblox 执行环境与 Roblox Studio。
 
@@ -63,11 +64,13 @@ Axiom.Notify({ Title = "系统就绪", Text = "已加载完成", Type = "success
 
 | 接口 | 说明 |
 | --- | --- |
-| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Folder`（资源/配置目录名）、`ConfigName`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript`；卡密相关：`KeySystem`、`KeyPlaceholder`、`KeyIcon`、`KeyDefault`、`OnKeyIconClick`、`KeyCheck`、`KeyAPI` |
-| `Window:AddTab(name, icon)` | 添加选项卡，返回 `Tab` |
+| `Axiom.CreateWindow(opts)` | 创建窗口，`opts`：`Title`、`Info`、`Folder`（资源/配置目录名）、`ConfigName`、`Background`、`LoginInfo`、`LoginTitle`、`OnLoadScript`；卡密相关：`KeySystem`、`KeyPlaceholder`、`KeyIcon`、`KeyDefault`、`OnKeyIconClick`、`KeyCheck`、`KeyAPI`；语言相关：`Lang`、`Languages`、`Locales`、`Translator` |
+| `Window:AddTab(name, icon, titleKey)` | 添加选项卡，返回 `Tab`；`titleKey` 为可选页签翻译键 |
 | `Window:AddLoginParagraph(o)` | 启动页添加整行段落 |
 | `Window:ShowNotify(o)` | 窗口内右下角简易通知 |
 | `Axiom.Notify(o)` | 全局堆叠通知，`o`：`Title`、`Text`/`Info`、`Duration`、`Type`；返回 `{ Frame, Dismiss() }` |
+| `Window:SetLanguage(code)` / `GetLanguage()` | 切换 / 读取当前界面语言 |
+| `Window:GetLanguages()` | 可用语言列表（`{ Code, Label }`） |
 | `Axiom.GetLucideCacheDir()` | 图标缓存目录 |
 | `Axiom.GetLucideModulePath()` | 图标缓存模块路径 |
 | `Axiom.GetLucideSource()` | 图标首次加载来源 |
@@ -123,6 +126,37 @@ KeyAPI = { Provider = "Luarmor", ScriptId = "你的脚本 ID" }
 通过 Luarmor 官方客户端库的 `check_key` 校验，仅 `KEY_VALID` 放行，其余状态映射为中文提示（过期 / 封禁 / 绑定其他设备 / 不存在 / 脚本 ID 错误等）。验证通过后自动解锁 UI；追加 `LoadScript = true` 时会写入 `script_key` 并调用 `load_script()`。
 
 > Luarmor 校验由官方库在客户端完成，UI 内无需填写 API Key。若使用自建后端代理，请改用上面的自定义 HTTP 接口，避免把 `Authorization` 暴露在客户端。
+
+### 界面语言（i18n）
+
+设置面板「窗口比例」下方内置语言下拉，默认中文，切换后立即生效（内置 `zh` / `en`）。
+
+```lua
+local Win = Axiom.CreateWindow({
+    Title = "AXIOM",
+    Lang = "zh",                 -- 默认语言；也可用 Axiom.DefaultLanguage 改全局默认
+    Languages = {                -- 追加可选语言
+        { Code = "ja", Label = "日本語" },
+    },
+    Locales = {                  -- 追加或覆盖词条
+        en = { ["demo.master"] = "Master Switch" },
+        ja = { ["settings.apply"] = "適用" },
+    },
+})
+Win:SetLanguage("en")            -- 代码切换
+Win:GetLanguage()                -- 当前语言
+Win:GetLanguages()               -- 语言列表
+```
+
+控件与页签可指定翻译键，未提供时以 `Title` / `Desc` 作为回退：
+
+```lua
+local Tab = Win:AddTab("常规", "settings", "tab.general")
+Tab:AddToggle({ Title = "主开关", TitleKey = "demo.master", Desc = "启用全部功能", DescKey = "demo.desc" })
+Tab:AddParagraph({ Title = "说明", Text = "默认文本", TextKey = "demo.body" })
+```
+
+内置词条键为 `login.*`、`settings.*`、`close.*`、`control.*`；缺失词条会依次回退到 `Locales`、内置语言包、传入的 `Title` / `Desc`。也可以用 `Translator = function(key, lang, fallback) ... end` 完全接管翻译。
 
 ### Tab 控件
 
