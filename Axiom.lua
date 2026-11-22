@@ -682,11 +682,35 @@ local LOCALES = {
         ["settings.savedTitle"] = "设置",
         ["settings.savedText"] = "你的设定已保存!",
         ["settings.logs"] = "版本更新日志",
-        ["settings.birthday"] = "账号生日: 未知",
         ["close.title"] = "你要关闭这个脚本吗？",
         ["close.desc"] = "关闭后界面将被销毁，需重新运行脚本。",
         ["close.yes"] = "关闭窗口",
         ["close.cancel"] = "取消",
+        ["close.thanks"] = "感谢使用",
+        ["bar.closeHint"] = "点击此处关闭页面",
+        ["account.birthday"] = "账号生日: %s",
+        ["account.age"] = "账号年龄: %s 天",
+        ["account.unknown"] = "账号生日: 未知",
+        ["notify.title"] = "通知",
+        ["key.success"] = "验证成功",
+        ["key.invalid"] = "密钥无效",
+        ["key.expired"] = "密钥已过期",
+        ["key.banned"] = "密钥已被封禁",
+        ["key.hwidLocked"] = "密钥已绑定其他设备",
+        ["key.incorrect"] = "密钥不存在",
+        ["key.badFormat"] = "密钥格式无效",
+        ["key.scriptIdBad"] = "脚本 ID 配置错误",
+        ["key.scriptIdFormat"] = "脚本 ID 格式错误",
+        ["key.badExecutor"] = "执行器不受支持",
+        ["key.security"] = "请求校验失败",
+        ["key.clock"] = "本地时间异常",
+        ["key.noScriptId"] = "缺少 ScriptId",
+        ["key.service"] = "验证服务不可用",
+        ["key.noEndpoint"] = "未配置验证接口",
+        ["key.network"] = "网络请求失败",
+        ["key.failed"] = "验证失败: %s",
+        ["key.timeout"] = "验证超时",
+        ["key.notConfigured"] = "未配置验证",
         ["control.Toggle"] = "开关",
         ["control.Button"] = "按钮",
         ["control.Slider"] = "滑块",
@@ -710,11 +734,35 @@ local LOCALES = {
         ["settings.savedTitle"] = "Settings",
         ["settings.savedText"] = "Your settings have been saved!",
         ["settings.logs"] = "Changelog",
-        ["settings.birthday"] = "Birthday: N/A",
         ["close.title"] = "Close this script?",
         ["close.desc"] = "Re-run the script to reopen.",
         ["close.yes"] = "Close Window",
         ["close.cancel"] = "Cancel",
+        ["close.thanks"] = "Thanks for using",
+        ["bar.closeHint"] = "Click here to close",
+        ["account.birthday"] = "Birthday: %s",
+        ["account.age"] = "Account age: %s days",
+        ["account.unknown"] = "Birthday: N/A",
+        ["notify.title"] = "Notice",
+        ["key.success"] = "Verification passed",
+        ["key.invalid"] = "Invalid key",
+        ["key.expired"] = "Key expired",
+        ["key.banned"] = "Key banned",
+        ["key.hwidLocked"] = "Key locked to another device",
+        ["key.incorrect"] = "Key not found",
+        ["key.badFormat"] = "Malformed key",
+        ["key.scriptIdBad"] = "Script ID mismatch",
+        ["key.scriptIdFormat"] = "Malformed Script ID",
+        ["key.badExecutor"] = "Unsupported executor",
+        ["key.security"] = "Request check failed",
+        ["key.clock"] = "Local clock is off",
+        ["key.noScriptId"] = "Missing ScriptId",
+        ["key.service"] = "Verification service unavailable",
+        ["key.noEndpoint"] = "No endpoint configured",
+        ["key.network"] = "Network request failed",
+        ["key.failed"] = "Verification failed: %s",
+        ["key.timeout"] = "Verification timed out",
+        ["key.notConfigured"] = "No verification configured",
         ["control.Toggle"] = "Toggle",
         ["control.Button"] = "Button",
         ["control.Slider"] = "Slider",
@@ -746,12 +794,21 @@ local function langText(self, key, fallback)
     local zh = LOCALES.zh
     return (zh and zh[key]) or key
 end
-local function bindText(self, obj, key, fallback, prop)
+local unpackArgs = table.unpack or unpack
+local function fmtText(self, key, fallback, args)
+    local v = langText(self, key, fallback)
+    if type(args) == "table" and #args > 0 then
+        local ok, s = pcall(string.format, v, unpackArgs(args))
+        if ok and type(s) == "string" then return s end
+    end
+    return v
+end
+local function bindText(self, obj, key, fallback, prop, args)
     if not obj then return end
     prop = prop or "Text"
     self._i18n = self._i18n or {}
-    self._i18n[#self._i18n + 1] = { obj = obj, key = key, fallback = fallback, prop = prop }
-    pcall(function() obj[prop] = langText(self, key, fallback) end)
+    self._i18n[#self._i18n + 1] = { obj = obj, key = key, fallback = fallback, prop = prop, args = args }
+    pcall(function() obj[prop] = fmtText(self, key, fallback, args) end)
 end
 local function applyLanguage(self, code)
     local known = false
@@ -761,7 +818,7 @@ local function applyLanguage(self, code)
     if not known then return false end
     self._lang = code
     for _, e in ipairs(self._i18n or {}) do
-        local v = langText(self, e.key, e.fallback)
+        local v = fmtText(self, e.key, e.fallback, e.args)
         pcall(function() e.obj[e.prop or "Text"] = v end)
     end
     if type(self._refreshLang) == "function" then pcall(self._refreshLang) end
@@ -911,8 +968,18 @@ end
 function Axiom.Notify(o)
     o = o or {}
     local st = notifyEnsure()
-    local title = tostring(o.Title or "Notification")
+    local win = type(o.Win) == "table" and o.Win or nil
+    local titleKey, textKey = o.TitleKey, o.TextKey
+    local rawTitle = o.Title
+    if rawTitle == nil and win and type(win._t) == "function" then
+        rawTitle = win:_t("notify.title", "通知")
+    end
+    local title = tostring(rawTitle or "Notification")
     local content = tostring(o.Text or o.Info or "")
+    if win and type(win._t) == "function" then
+        if type(titleKey) == "string" then title = win:_t(titleKey, title) end
+        if type(textKey) == "string" then content = win:_t(textKey, content) end
+    end
     local borderColor = C.Line
     local mainColor = C.Accent
     if o.Type == "success" then borderColor = C.Green; mainColor = C.Green
@@ -937,6 +1004,10 @@ function Axiom.Notify(o)
     dd.Name = "Content"; dd.Size = UDim2.new(1, -16, 0, 12); dd.Position = UDim2.fromOffset(10, 16)
     dd.ZIndex = 2
     pcall(function() dd.TextTruncate = Enum.TextTruncate.AtEnd end)
+    if win and type(win._bindText) == "function" then
+        if type(titleKey) == "string" then win:_bindText(tt, titleKey, title) end
+        if type(textKey) == "string" then win:_bindText(dd, textKey, content) end
+    end
     local entry = { frame = frame, alive = true, seq = st.seq }
     st.seq = st.seq + 1
     st.list[#st.list + 1] = entry
@@ -1317,16 +1388,16 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local ERR = Color3.fromRGB(255, 96, 96)
     local keyCfg = type(opts.KeyAPI) == "table" and opts.KeyAPI or nil
     local LUARMOR_MSG = {
-        KEY_EXPIRED = "密钥已过期",
-        KEY_BANNED = "密钥已被封禁",
-        KEY_HWID_LOCKED = "密钥已绑定其他设备",
-        KEY_INCORRECT = "密钥不存在",
-        KEY_INVALID = "密钥格式无效",
-        SCRIPT_ID_INCORRECT = "脚本 ID 配置错误",
-        SCRIPT_ID_INVALID = "脚本 ID 格式错误",
-        INVALID_EXECUTOR = "执行器不受支持",
-        SECURITY_ERROR = "请求校验失败",
-        TIME_ERROR = "本地时间异常",
+        KEY_EXPIRED = { "key.expired", "密钥已过期" },
+        KEY_BANNED = { "key.banned", "密钥已被封禁" },
+        KEY_HWID_LOCKED = { "key.hwidLocked", "密钥已绑定其他设备" },
+        KEY_INCORRECT = { "key.incorrect", "密钥不存在" },
+        KEY_INVALID = { "key.badFormat", "密钥格式无效" },
+        SCRIPT_ID_INCORRECT = { "key.scriptIdBad", "脚本 ID 配置错误" },
+        SCRIPT_ID_INVALID = { "key.scriptIdFormat", "脚本 ID 格式错误" },
+        INVALID_EXECUTOR = { "key.badExecutor", "执行器不受支持" },
+        SECURITY_ERROR = { "key.security", "请求校验失败" },
+        TIME_ERROR = { "key.clock", "本地时间异常" },
     }
     local function urlEncode(s)
         local ok, v = pcall(function()
@@ -1342,7 +1413,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         local cfg = keyCfg or {}
         local scriptId = cfg.ScriptId or cfg.script_id
         if type(scriptId) ~= "string" or #scriptId == 0 then
-            cb(false, "缺少 ScriptId")
+            cb(false, self:_t("key.noScriptId", "缺少 ScriptId"))
             return
         end
         local libUrl = cfg.LibraryUrl or "https://sdkapi-public.luarmor.net/library.lua"
@@ -1358,7 +1429,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             return { api = api, status = api.check_key(key) }
         end)
         if not okRun or type(result) ~= "table" then
-            cb(false, "验证服务不可用")
+            cb(false, self:_t("key.service", "验证服务不可用"))
             return
         end
         local status = type(result.status) == "table" and result.status or {}
@@ -1372,9 +1443,11 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
                 end)
                 pcall(function() result.api.load_script() end)
             end
-            cb(true, "验证成功", status.data)
+            cb(true, self:_t("key.success", "验证成功"), status.data)
         else
-            cb(false, LUARMOR_MSG[code] or tostring(status.message or "密钥无效"), status.data)
+            local mapped = LUARMOR_MSG[code]
+            cb(false, mapped and self:_t(mapped[1], mapped[2])
+                or tostring(status.message or self:_t("key.invalid", "密钥无效")), status.data)
         end
     end
     local function httpCheck(key, cb)
@@ -1385,7 +1458,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             url = ok and v or nil
         end
         if type(url) ~= "string" or #url == 0 then
-            cb(false, "未配置验证接口")
+            cb(false, self:_t("key.noEndpoint", "未配置验证接口"))
             return
         end
         local method = string.upper(tostring(cfg.Method or "POST"))
@@ -1415,7 +1488,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end
         local res = httpRequest({ Url = finalUrl, Method = method, Headers = headers, Body = body })
         if type(res) ~= "table" then
-            cb(false, "网络请求失败")
+            cb(false, self:_t("key.network", "网络请求失败"))
             return
         end
         local code = tonumber(res.StatusCode or res.status or res.Status or 0) or 0
@@ -1440,7 +1513,8 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             msg = raw:match('"message"%s*:%s*"([^"]*)"') or raw:match('"msg"%s*:%s*"([^"]*)"')
                 or raw:match('"error"%s*:%s*"([^"]*)"')
         end
-        cb(okv == true, msg or (okv and "验证成功" or "密钥无效"), data)
+        cb(okv == true, msg or (okv and self:_t("key.success", "验证成功")
+            or self:_t("key.invalid", "密钥无效")), data)
     end
     local function runKeyCheck(key, cb)
         local fn = opts.KeyCheck
@@ -1454,11 +1528,13 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             end
             local ok, ret, msg, data = pcall(fn, key, resolve, self)
             if not ok then
-                if not settled then resolve(false, "验证失败: " .. tostring(ret)) end
+                if not settled then
+                    resolve(false, string.format(self:_t("key.failed", "验证失败: %s"), tostring(ret)))
+                end
             elseif not settled and ret ~= nil then
                 resolve(ret == true, msg, data)
             end
-            later(20, function() if not settled then resolve(false, "验证超时") end end)
+            later(20, function() if not settled then resolve(false, self:_t("key.timeout", "验证超时")) end end)
             return
         end
         local provider = keyCfg and tostring(keyCfg.Provider or "") or ""
@@ -1470,7 +1546,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             httpCheck(key, cb)
             return
         end
-        cb(true, "未配置验证", nil)
+        cb(true, self:_t("key.notConfigured", "未配置验证"), nil)
     end
     local function keyShake()
         if not keyBox then return end
@@ -1648,25 +1724,24 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local uname2 = label(sRight, name2, 13, C.Text, true, Enum.TextXAlignment.Left)
     uname2.Name = "SettingsName"; uname2.Size = UDim2.fromOffset(rightW - av2 - 26, 18)
     uname2.Position = UDim2.fromOffset(16 + av2 + 8, 18); uname2.ZIndex = 30
-    local bday = self:_t("settings.birthday", "账号生日: 未知")
-    local bdayKnown = false
+    local bdayKey, bdayFallback, bdayArgs = "account.unknown", "账号生日: 未知", nil
     pcall(function()
         local Players = game:GetService("Players")
         local lp = Players and Players.LocalPlayer
         local age = lp and lp.AccountAge
         if type(age) == "number" and type(os) == "table" and type(os.time) == "function" and type(os.date) == "function" then
             local created = os.time() - math.floor(age) * 86400
-            bday = "账号生日: " .. tostring(os.date("%Y-%m-%d", created))
-            bdayKnown = true
+            bdayKey, bdayFallback = "account.birthday", "账号生日: %s"
+            bdayArgs = { tostring(os.date("%Y-%m-%d", created)) }
         elseif type(age) == "number" then
-            bday = "账号年龄: " .. tostring(math.floor(age)) .. " 天"
-            bdayKnown = true
+            bdayKey, bdayFallback = "account.age", "账号年龄: %s 天"
+            bdayArgs = { tostring(math.floor(age)) }
         end
     end)
-    local bdayTx = label(sRight, bday, 10, C.Sub, false, Enum.TextXAlignment.Left)
+    local bdayTx = label(sRight, fmtText(self, bdayKey, bdayFallback, bdayArgs), 10, C.Sub, false, Enum.TextXAlignment.Left)
     bdayTx.Name = "SettingsBirthday"; bdayTx.Size = UDim2.fromOffset(rightW - av2 - 26, 16)
     bdayTx.Position = UDim2.fromOffset(16 + av2 + 8, 38); bdayTx.ZIndex = 30
-    if not bdayKnown then self:_bindText(bdayTx, "settings.birthday", "账号生日: 未知") end
+    self:_bindText(bdayTx, bdayKey, bdayFallback, nil, bdayArgs)
     local secTitle = label(sRight, self:_t("settings.title", "UI设置"), 14, C.Text, true, Enum.TextXAlignment.Left)
     secTitle.Name = "SettingsSection"; secTitle.Size = UDim2.fromOffset(rightW - 32, 22)
     secTitle.Position = UDim2.fromOffset(16, av2 + 30); secTitle.ZIndex = 30
@@ -1701,9 +1776,13 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         Position = UDim2.new(1, -21, 0.5, -6), BackgroundTransparency = 1, ZIndex = 31 })
     applyIcon(langChev, "chevron-down", C.Sub)
     local langContentH = 8 + #self._languages * 26
-    local langMenuH = math.min(langContentH, 164)
     local langMenuY = 34 + av2 + 132 + 38
-    if langMenuY + langMenuH > H - 8 then langMenuY = H - 8 - langMenuH end
+    local langLimitY = 34 + (bodyH - 48) - 6
+    local langSpace = math.max(78, langLimitY - langMenuY)
+    local langMenuH = math.min(langContentH, 164, langSpace)
+    if langMenuY + langMenuH > langLimitY then
+        langMenuY = math.max(34, langLimitY - langMenuH)
+    end
     local langMenu = inst("CanvasGroup", main, { Name = "LanguageMenu", Size = UDim2.fromOffset(rightW - 32, langMenuH),
         Position = UDim2.fromOffset(leftW + 16, langMenuY), BackgroundColor3 = C.Panel,
         BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 40, Active = true })
@@ -1868,9 +1947,11 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             tweenEx(main, { Position = newPos }, 0.34, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
         }
         hidePreview()
+        if closeLangMenu then pcall(closeLangMenu) end
         if type(Axiom.Notify) == "function" then
             pcall(function()
-                Axiom.Notify({ Title = self:_t("settings.savedTitle", "设置"),
+                Axiom.Notify({ Win = self, TitleKey = "settings.savedTitle", TextKey = "settings.savedText",
+                    Title = self:_t("settings.savedTitle", "设置"),
                     Text = self:_t("settings.savedText", "你的设定已保存!"), Type = "success", Duration = 2.5 })
             end)
         end
@@ -1882,6 +1963,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         settingsOpen = not settingsOpen
         self._settingsOpenState = settingsOpen
         if settingsOpen then
+            if type(self._refreshLang) == "function" then pcall(self._refreshLang) end
             pct = math.floor(((self._mainScale and self._mainScale.Scale or pvBaseScale) / pvBaseScale) * 100 + 0.5)
             pct = clamp(pct, minPct, maxPct)
             sfill.Size = UDim2.fromScale(clamp((pct - minPct) / (maxPct - minPct), 0.02, 1), 1)
@@ -1891,6 +1973,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             fade(sLayer, 0, 0.3)
             if type(self._startExitHint) == "function" then self:_startExitHint() end
         else
+            if closeLangMenu then pcall(closeLangMenu) end
             hidePreview()
             if type(self._stopExitHint) == "function" then self:_stopExitHint() end
             fade(sLayer, 1, 0.24, function() sLayer.Visible = false end)
@@ -1941,7 +2024,7 @@ function Axiom.CreateWindow(opts)
     if type(wantLang) ~= "string" or not langSeen[wantLang] then wantLang = "zh" end
     self._lang = wantLang
     function self:_t(key, fallback) return langText(self, key, fallback) end
-    function self:_bindText(obj, key, fallback, prop) bindText(self, obj, key, fallback, prop) end
+    function self:_bindText(obj, key, fallback, prop, args) bindText(self, obj, key, fallback, prop, args) end
     function self:_applyLanguage(code) return applyLanguage(self, code) end
     function self:_langLabelOf(code)
         for _, l in ipairs(self._languages or {}) do
@@ -2029,9 +2112,11 @@ function Axiom.CreateWindow(opts)
         AutoButtonColor = false, Visible = false, ZIndex = 6 })
     applyIcon(hintIcon, "arrow-left", C.Accent)
     local hintText = inst("TextButton", bar, { Name = "ExitHintText", Size = UDim2.fromOffset(112, 16),
-        Position = UDim2.fromOffset(hintTextX, 9), BackgroundTransparency = 1, Text = "点击此处关闭页面",
+        Position = UDim2.fromOffset(hintTextX, 9), BackgroundTransparency = 1,
+        Text = self:_t("bar.closeHint", "点击此处关闭页面"),
         TextColor3 = C.Accent, TextSize = 10, Font = FONT, TextXAlignment = Enum.TextXAlignment.Left,
         TextTransparency = 1, AutoButtonColor = false, Visible = false, ZIndex = 6 })
+    self:_bindText(hintText, "bar.closeHint", "点击此处关闭页面")
     local hintConn = nil
     local hintRun = false
     local hintT = 0
@@ -2705,10 +2790,16 @@ function Axiom.CreateWindow(opts)
         local ni = inst("ImageLabel", toast, { Size = UDim2.fromOffset(20, 20),
             Position = UDim2.fromOffset(12, 11), BackgroundTransparency = 1, ZIndex = 22 })
         applyIcon(ni, "bell", C.Accent)
-        local t = label(toast, o.Title or "Axiom", 14, C.Text, true)
+        local tTitle = o.Title or "Axiom"
+        local tInfo = o.Info or o.Text or ""
+        if type(o.TitleKey) == "string" then tTitle = self:_t(o.TitleKey, tTitle) end
+        if type(o.TextKey) == "string" then tInfo = self:_t(o.TextKey, tInfo) end
+        local t = label(toast, tTitle, 14, C.Text, true)
         t.Size = UDim2.fromOffset(200, 22); t.Position = UDim2.fromOffset(40, 9); t.ZIndex = 21
-        local s = label(toast, o.Info or "", 11, C.Sub)
+        local s = label(toast, tInfo, 11, C.Sub)
         s.Size = UDim2.fromOffset(230, 20); s.Position = UDim2.fromOffset(12, 34); s.ZIndex = 21
+        if type(o.TitleKey) == "string" then self:_bindText(t, o.TitleKey, tTitle) end
+        if type(o.TextKey) == "string" then self:_bindText(s, o.TextKey, tInfo) end
         if type(task) == "table" and type(task.delay) == "function" then
             pcall(task.delay, o.Duration or 3, function()
                 fade(toast, 1, 0.3, function() if toast.Parent then toast:Destroy() end end)
@@ -2851,8 +2942,9 @@ function Axiom.CreateWindow(opts)
             AnchorPoint = Vector2.new(0.5, 0.5), BackgroundTransparency = 1,
             ImageTransparency = 1, ZIndex = 202 })
         applyIcon(centerIcon, "handshake", C.Accent)
-        local thanksText = label(fx, "感谢使用", 20, C.Text, true, Enum.TextXAlignment.Center)
+        local thanksText = label(fx, self:_t("close.thanks", "感谢使用"), 20, C.Text, true, Enum.TextXAlignment.Center)
         thanksText.Name = "ThanksText"
+        self:_bindText(thanksText, "close.thanks", "感谢使用")
         thanksText.Size = UDim2.fromOffset(240, 30)
         thanksText.Position = atCenter(28)
         thanksText.AnchorPoint = Vector2.new(0.5, 0.5)
