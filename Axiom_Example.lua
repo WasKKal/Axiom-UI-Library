@@ -1,7 +1,9 @@
 local LIB_URLS = {
     "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/Axiom.lua",
     "https://cdn.jsdelivr.net/gh/WasKKal/Axiom-UI-Library@main/Axiom.lua",
-}
+} -- UI源地址
+
+--一个简单的异常判断
 local Axiom = nil
 local failReason = nil
 for _, url in ipairs(LIB_URLS) do
@@ -27,85 +29,89 @@ if not Axiom then
     return
 end
 
--- 单个窗口：LoginInfo 启动页与选项卡主 UI 共存。
--- 加载脚本后淡出登录层，露出同一个窗口的选项卡；最小化/展开/关闭都只作用于这一个窗口。
--- 标题栏第三个绿色球：点击唤出设置面板（左侧更新日志 + 右侧账号信息/窗口比例），"应用修改"保存并弹出通知。
+-- 创建窗口 LoginInfo 启动页与选项卡主 UI 共存
 local Win = Axiom.CreateWindow({
-    Title = "AXIOM",
-    Folder = "AxiomDemo",
-    LoginInfo = true,
-    LoginTitle = "版本更新日志",
-    Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg",
-    -- 多语言：Lang 为默认语言（缺省 zh），Languages 追加可选语言，Locales 追加或覆盖词条。
+    Title = "AXIOM", --标题
+    Folder = "AxiomDemo", -- 配置文件夹
+    LoginInfo = true, --一个额外的加载界面 可用于卡密验证 展示更新信息等
+    LoginTitle = "版本更新日志", --登录页面的标题
+    Background = "https://raw.githubusercontent.com/WasKKal/Axiom-UI-Library/main/axiom-background.jpg", --背景图片(只支持图片)
+    -- Lang 为默认语言 Languages 追加可选语言 Locales 追加或覆盖词条
     Lang = "zh",
     Languages = { { Code = "ja", Label = "日本語" } },
     Locales = {
         en = { ["demo.master"] = "Master Switch", ["demo.masterDesc"] = "Enable all features" },
         ja = { ["demo.master"] = "メインスイッチ" },
     },
-    -- KeySystem 演示：输入框占位文字可改；点击左侧 user-key 图标可自定义行为（这里演示复制卡密到剪贴板）。
-    -- 正式使用时把 KeyCheck 换成自己的后端接口，或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }。
-    KeySystem = true,
-    KeyPlaceholder = "输入 AXIOM-DEMO 解锁",
+    -- KeySystem演示 输入框占位文字可改 点击左侧 user-key 图标可自定义行为
+    -- 把 KeyCheck 换成自己的后端接口 或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }
+    KeySystem = true, --启用状态
+    KeyPlaceholder = "输入 AXIOM-DEMO 解锁", -- 占位文本
     KeyDefault = "",
     OnKeyIconClick = function(win, input)
-        local txt = tostring(input and input.Text or "")
-        local done = false
-        pcall(function()
-            if type(setclipboard) == "function" then
-                setclipboard(txt); done = true
-            elseif type(toclipboard) == "function" then
-                toclipboard(txt); done = true
-            end
-        end)
-        Axiom.Notify({
-            Title = "卡密",
-            Text = done and "卡密已复制到剪贴板" or "复制失败，请手动选择文本",
-            Type = done and "success" or "warning",
-            Duration = 2.5,
-        })
-    end,
-    KeyCheck = function(key, resolve)
-        if string.upper(key) == "AXIOM-DEMO" then
-            resolve(true, "验证成功", { plan = "demo" })
-        else
-            resolve(false, "密钥无效，请输入 AXIOM-DEMO")
-        end
-    end,
-    OnLoadScript = function() print("load script -> main UI") end,
+    local txt = tostring(input and input.Text or "")
+    local done = false
+    pcall(function()
+        setclipboard("AXIOM-DEMO")
+        done = true
+    end)
+    Axiom.Notify({
+        Title = "卡密",
+        Text = done and "卡密已复制到剪贴板" or "复制失败，请手动选择文本",
+        Type = done and "success" or "warning",
+        Duration = 2.5,
+    })
+end,
+KeyCheck = function(key, resolve)
+    if string.upper(key) == "AXIOM-DEMO" then
+        resolve(true, "验证成功", { plan = "demo" })
+    else
+        resolve(false, "密钥无效，请输入 AXIOM-DEMO")
+    end
+end,
+OnLoadScript = function() print("load script -> main UI") end,
 })
 
--- Config：给控件加 ConfigKey 后即可用 Win:SaveConfig / LoadConfig 存取
--- 例：Win:SaveConfig("Preset1"); Win:LoadConfig("Preset1"); Win:GetConfigs()
+-- 给控件加 ConfigKey 后即可用 Win:SaveConfig / LoadConfig 存取
+-- 例 Win:SaveConfig("Preset1"); Win:LoadConfig("Preset1"); Win:GetConfigs()
 
--- ===== 通知快捷封装：控件回调触发右上角堆叠通知 =====
+-- 通知消息封装 更方便
 local function toast(title, text, typ)
     Axiom.Notify({ Title = title, Text = text, Type = typ or "info", Duration = 3 })
 end
 
--- ===== 主 UI 选项卡（加载脚本后显示）=====
+-- 创建一个选项卡
 local Tab = Win:AddTab("General", "settings")
 Tab:AddParagraph({
     Title = "Overview", Desc = "Layout & typography preview", Icon = "align-left",
     Text = "主从分栏布局：左侧文字菜单，右侧表格化对齐控件。",
 })
+
+-- 创建一个开关控件
 Tab:AddToggle({
     Title = "主开关", TitleKey = "demo.master",
     Desc = "启用全部功能", DescKey = "demo.masterDesc",
     Icon = "toggle-right", Default = true, ConfigKey = "master",
     Callback = function(v) toast("主开关", "已" .. (v and "启用" or "关闭") .. "全部功能", v and "success" or "warning") end,
 })
+
+-- 一个slider
 local Slider = Tab:AddSlider({
     Title = "Walk Speed", Desc = "移动速度", Icon = "gauge",
     Min = 0, Max = 200, Default = 65, ConfigKey = "speed",
     Callback = function(v) toast("移动速度", "当前速度：" .. tostring(v), "info") end,
 })
+
+-- 下拉菜单控件
 local Dropdown = Tab:AddDropdown({
     Title = "Theme Preset", Desc = "主题预设", Icon = "list-filter",
-    Multi = true, Options = { "Default", "Neon", "Minimal", "Retro", "Mono" },
+    Multi = true, --是否可多选 这里是可多选true
+    Options = { "Default", "Neon", "Minimal", "Retro", "Mono" }, --内容
     Default = { "Neon", "Retro" }, ConfigKey = "theme",
     Callback = function(list) toast("主题预设", "已选 " .. table.concat(list, "、"), "success") end,
 })
+
+--颜色选择器
 Tab:AddColorPicker({
     Title = "Accent Color", Desc = "强调色", Icon = "palette",
     Default = Color3.fromRGB(88, 150, 255), ConfigKey = "accent",
@@ -115,9 +121,10 @@ Tab:AddButton({
     Title = "Apply", Desc = "应用设置", Icon = "send",
     Callback = function() toast("应用成功", "所有设置已保存并生效", "success") end,
 })
-Slider:SetValue(120)
-Dropdown:Select("Mono", true)
+Slider:SetValue(120) --设定Slider的值
+Dropdown:Select("Mono", true)-- 设定下拉菜单当前选中项
 
+-- 另一个选项卡 也是控件演示 不过多注释了
 local TabVisual = Win:AddTab("Appearance", "palette")
 TabVisual:AddToggle({ Title = "Transparency", Desc = "窗口半透明", Icon = "toggle-right", Default = false,
     Callback = function(v) toast("窗口半透明", v and "已开启" or "已关闭", "info") end })
@@ -151,7 +158,7 @@ TabAbout:AddParagraph({ Title = "Axiom UI Library", Desc = "关于", Icon = "ali
 TabAbout:AddButton({ Title = "GitHub", Desc = "打开仓库", Icon = "send",
     Callback = function() toast("仓库地址", "github.com/WasKKal/Axiom-UI-Library", "info") end })
 
--- ===== 启动页更新日志（进入脚本时显示）=====
+-- 添加LoginInfo页面的段落
 Win:AddLoginParagraph({
     Title = "v1.0.0", Icon = "align-left",
     Text = "春日的清晨总是格外温柔，街角面包店飘出刚出炉的可颂香气，路边的樱花树下有几只麻雀在嬉戏，远处钟楼敲响了八下，提醒人们新的一天开始了。",
@@ -177,9 +184,9 @@ Win:AddLoginParagraph({
     Text = "深夜的城市褪去了白日喧嚣，路灯把行人的影子拉得很长，便利店里的关东煮冒着热气，我买了一杯热可可捧在手心，慢慢走回家享受这份久违宁静。",
 })
 
--- ===== Notify 演示：右上角堆叠、固定 250x30 紧凑框架、左边缘指示条按主色自适应(蓝/绿/黄/红白)、滑入/上移补位/滑出动画 =====
-Axiom.Notify({ Title = "系统就绪", Text = "Axiom UI Library 已加载，图标缓存于 lucide-icon-latest/", Type = "info", Duration = 5 })
-Axiom.Notify({ Title = "多选下拉", Text = "支持多选、限高滚动与触摸防穿透。", Type = "success", Duration = 6 })
-Axiom.Notify({ Title = "提示", Text = "右上角堆叠，到期后其余通知自动上移补位。", Type = "warning", Duration = 7 })
-Axiom.Notify({ Title = "错误", Text = "指示条随主色自适应：红边框即红白指示条。", Type = "error", Duration = 8 })
-Axiom.Notify({ Title = "自定义颜色", Text = "传入 Color 可指定主色，指示条与边框同步。", Color = Color3.fromRGB(200, 30, 180), Duration = 9 })
+-- Notify 右上角堆叠 左边缘指示条按主色自适应(蓝/绿/黄/红白)
+Axiom.Notify({ Title = "系统就绪", Text = "Axiom UI Library 已加载，图标缓存于 lucide-icon-latest/", Type = "info", Duration = 2 })
+Axiom.Notify({ Title = "多选下拉", Text = "支持多选、限高滚动与触摸防穿透。", Type = "success", Duration = 2 })
+Axiom.Notify({ Title = "提示", Text = "右上角堆叠，到期后其余通知自动上移补位。", Type = "warning", Duration = 2 })
+Axiom.Notify({ Title = "错误", Text = "指示条随主色自适应：红边框即红白指示条。", Type = "error", Duration = 2 })
+Axiom.Notify({ Title = "自定义颜色", Text = "传入 Color 可指定主色，指示条与边框同步。", Color = Color3.fromRGB(200, 30, 180), Duration = 2 })
