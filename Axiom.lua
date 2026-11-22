@@ -666,6 +666,107 @@ Axiom.__index = Axiom
 Axiom.GetLucideCacheDir = function() return LUCIDE_CACHE_DIR end
 Axiom.GetLucideModulePath = function() return LUCIDE_MODULE_PATH end
 Axiom.GetLucideSource = function() return LucideSource end
+local LOCALES = {
+    zh = {
+        ["login.load"] = "加载脚本",
+        ["login.verify"] = "验证密钥并载入",
+        ["login.loading"] = "加载中",
+        ["login.verifying"] = "验证中",
+        ["login.emptyKey"] = "请输入密钥",
+        ["login.invalidKey"] = "密钥无效",
+        ["login.keyPlaceholder"] = "输入密钥",
+        ["settings.title"] = "UI设置",
+        ["settings.scale"] = "窗口比例",
+        ["settings.language"] = "界面语言",
+        ["settings.apply"] = "应用修改",
+        ["settings.savedTitle"] = "设置",
+        ["settings.savedText"] = "你的设定已保存!",
+        ["settings.logs"] = "版本更新日志",
+        ["settings.birthday"] = "账号生日: 未知",
+        ["close.title"] = "你要关闭这个脚本吗？",
+        ["close.desc"] = "关闭后界面将被销毁，需重新运行脚本。",
+        ["close.yes"] = "关闭窗口",
+        ["close.cancel"] = "取消",
+        ["control.Toggle"] = "开关",
+        ["control.Button"] = "按钮",
+        ["control.Slider"] = "滑块",
+        ["control.Dropdown"] = "下拉菜单",
+        ["control.Paragraph"] = "段落",
+        ["control.ColorPicker"] = "取色器",
+        ["control.desc"] = "Axiom 设置",
+    },
+    en = {
+        ["login.load"] = "Load Script",
+        ["login.verify"] = "Verify & Load",
+        ["login.loading"] = "Loading",
+        ["login.verifying"] = "Verifying",
+        ["login.emptyKey"] = "Enter your key",
+        ["login.invalidKey"] = "Invalid key",
+        ["login.keyPlaceholder"] = "Enter key",
+        ["settings.title"] = "UI Settings",
+        ["settings.scale"] = "UI Scale",
+        ["settings.language"] = "Language",
+        ["settings.apply"] = "Apply Changes",
+        ["settings.savedTitle"] = "Settings",
+        ["settings.savedText"] = "Your settings have been saved!",
+        ["settings.logs"] = "Changelog",
+        ["settings.birthday"] = "Birthday: N/A",
+        ["close.title"] = "Close this script?",
+        ["close.desc"] = "Re-run the script to reopen.",
+        ["close.yes"] = "Close Window",
+        ["close.cancel"] = "Cancel",
+        ["control.Toggle"] = "Toggle",
+        ["control.Button"] = "Button",
+        ["control.Slider"] = "Slider",
+        ["control.Dropdown"] = "Dropdown",
+        ["control.Paragraph"] = "Paragraph",
+        ["control.ColorPicker"] = "Color Picker",
+        ["control.desc"] = "Axiom setting",
+    },
+}
+local LANG_LABELS = { zh = "中文", en = "English" }
+Axiom.DefaultLanguage = "zh"
+local function langText(self, key, fallback)
+    local lang = self._lang or "zh"
+    if self._translator then
+        local ok, v = pcall(self._translator, key, lang, fallback)
+        if ok and type(v) == "string" and v ~= "" then return v end
+    end
+    local extra = self._extraLocales and self._extraLocales[lang]
+    if extra then
+        local v = extra[key]
+        if type(v) == "string" and v ~= "" then return v end
+    end
+    local base = LOCALES[lang]
+    if base then
+        local v = base[key]
+        if type(v) == "string" and v ~= "" then return v end
+    end
+    if fallback ~= nil then return fallback end
+    local zh = LOCALES.zh
+    return (zh and zh[key]) or key
+end
+local function bindText(self, obj, key, fallback, prop)
+    if not obj then return end
+    prop = prop or "Text"
+    self._i18n = self._i18n or {}
+    self._i18n[#self._i18n + 1] = { obj = obj, key = key, fallback = fallback, prop = prop }
+    pcall(function() obj[prop] = langText(self, key, fallback) end)
+end
+local function applyLanguage(self, code)
+    local known = false
+    for _, l in ipairs(self._languages or {}) do
+        if l.Code == code then known = true; break end
+    end
+    if not known then return false end
+    self._lang = code
+    for _, e in ipairs(self._i18n or {}) do
+        local v = langText(self, e.key, e.fallback)
+        pcall(function() e.obj[e.prop or "Text"] = v end)
+    end
+    if type(self._refreshLang) == "function" then pcall(self._refreshLang) end
+    return true
+end
 local C = {
     Bg = Color3.fromRGB(24, 26, 31), Side = Color3.fromRGB(29, 32, 38),
     Bar = Color3.fromRGB(18, 20, 25),
@@ -679,8 +780,7 @@ local C = {
     DeepGray1 = Color3.fromRGB(78, 84, 94), DeepGray2 = Color3.fromRGB(56, 61, 70),
 }
 local FONT = Enum.Font.SourceSans
-local FONT_B = Enum.Font.GothamBold
-local FONT_FACE, FONT_FACE_B, USE_FONT_FACE = nil, nil, false
+local FONT_B = Enum.Font.GothamBoldlocal FONT_FACE, FONT_FACE_B, USE_FONT_FACE = nil, nil, false
 pcall(function()
     local FC = Font
     if type(FC) ~= "table" then return end
@@ -952,9 +1052,10 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local headerH = 68
     local header = inst("Frame", layer, { Name = "LoginHeader", Size = UDim2.fromOffset(leftW, headerH),
         Position = UDim2.fromOffset(0, 0), BackgroundColor3 = C.Bg, BorderSizePixel = 0, ZIndex = 26 })
-    local big = label(header, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
+    local big = label(header, opts.LoginTitle or self:_t("settings.logs", "版本更新日志"), 22, C.Text, true)
     big.Name = "LoginTitle"; big.Size = UDim2.fromOffset(leftW - 40, 32)
     big.Position = UDim2.fromOffset(24, 16); big.ZIndex = 27
+    if not opts.LoginTitle then self:_bindText(big, "settings.logs", "版本更新日志") end
     inst("Frame", header, { Name = "LoginTitleLine", Size = UDim2.fromOffset(leftW - 48, 1),
         Position = UDim2.fromOffset(24, 54), BackgroundColor3 = C.Line,
         BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 27 })
@@ -1066,10 +1167,13 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         keyInput = inst("TextBox", keyBox, { Name = "KeyInput", Size = UDim2.new(1, -44, 1, 0),
             Position = UDim2.fromOffset(40, 0), BackgroundTransparency = 1,
             Text = tostring(opts.KeyDefault or ""),
-            PlaceholderText = tostring(opts.KeyPlaceholder or "输入密钥"),
+            PlaceholderText = tostring(opts.KeyPlaceholder or self:_t("login.keyPlaceholder", "输入密钥")),
             PlaceholderColor3 = C.Sub, TextColor3 = C.Text, TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
             ClipsDescendants = true, ZIndex = 28 })
+        if opts.KeyPlaceholder == nil then
+            self:_bindText(keyInput, "login.keyPlaceholder", "输入密钥", "PlaceholderText")
+        end
         connect(keyIconBtn.MouseButton1Click, function()
             local cb = opts.OnKeyIconClick or opts.KeyIconCallback
             if type(cb) == "function" then pcall(cb, self, keyInput, keyBox) end
@@ -1096,9 +1200,11 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end)
     end
     local by = keySystem and (keyTop + keyH + 10) or (baseY + avSize + 12 + 26 + 18)
-    local loadLabel = keySystem and "验证密钥并载入" or "加载脚本"
+    local loadKey = keySystem and "login.verify" or "login.load"
+    local loadLabel = self:_t(loadKey, keySystem and "验证密钥并载入" or "加载脚本")
     local loadBtn, loadTx = loginBtn("LoadScript", loadLabel, by, C.Accent, C.Accent2, nil,
         { C.AccentW, Color3.new(1, 1, 1), 90 })
+    if loadTx then self:_bindText(loadTx, loadKey, keySystem and "验证密钥并载入" or "加载脚本") end
     stroke(loadBtn, C.AccentW, 1.5, 0.25)                       
     local loadFill = nil
     for _, c in ipairs(loadBtn:GetChildren()) do
@@ -1388,7 +1494,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
                 Transparency = focused and 0 or 0.2 }, 0.16)
         end
         if keyIconImg then tweenProp(keyIconImg, { ImageColor3 = C.Sub }, 0.16) end
-        if loadTx then pcall(function() loadTx.Text = loadLabel end) end
+        if loadTx then pcall(function() loadTx.Text = self:_t(loadKey, loadLabel) end) end
         if loadFill and loadFill.UIGradient then
             pcall(function()
                 loadFill.UIGradient.Color = ColorSequence.new({
@@ -1408,7 +1514,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             pcall(function() keyStroke.Color = ERR; keyStroke.Transparency = 0 end)
         end
         if keyIconImg then pcall(function() keyIconImg.ImageColor3 = ERR end) end
-        if loadTx then pcall(function() loadTx.Text = tostring(msg or "密钥无效") end) end
+        if loadTx then pcall(function() loadTx.Text = tostring(msg or self:_t("login.invalidKey", "密钥无效")) end) end
         if loadFill and loadFill.UIGradient then
             pcall(function()
                 loadFill.UIGradient.Color = ColorSequence.new({
@@ -1423,7 +1529,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end)
     end
     local function loadSequence()
-        if loadTx then pcall(function() loadTx.Text = "加载中" end) end
+        if loadTx then pcall(function() loadTx.Text = self:_t("login.loading", "加载中") end) end
         loginSequence(function()
             self:_showMainUI()
             if type(opts.OnLoadScript) == "function" then pcall(opts.OnLoadScript) end
@@ -1454,12 +1560,12 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         end
         local key = self:GetKey():gsub("^%s+", ""):gsub("%s+$", "")
         if #key == 0 then
-            showKeyError("请输入密钥")
+            showKeyError(self:_t("login.emptyKey", "请输入密钥"))
             return
         end
         self._loginLoading = true
         loadBtn.Active = false
-        if loadTx then pcall(function() loadTx.Text = "验证中" end) end
+        if loadTx then pcall(function() loadTx.Text = self:_t("login.verifying", "验证中") end) end
         local settled = false
         runKeyCheck(key, function(ok, msg, data)
             if settled then return end
@@ -1470,7 +1576,7 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
             else
                 self._loginLoading = false
                 loadBtn.Active = true
-                showKeyError(msg or "密钥无效")
+                showKeyError(msg or self:_t("login.invalidKey", "密钥无效"))
             end
         end)
     end)
@@ -1513,8 +1619,9 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         CanvasSize = UDim2.new(0, 0, 0, bodyH), ClipsDescendants = false })
     self._settingsLeft = sLeft
     self._settingsY = 68
-    local sBig = label(sLeft, opts.LoginTitle or "版本更新日志", 22, C.Text, true)
+    local sBig = label(sLeft, opts.LoginTitle or self:_t("settings.logs", "版本更新日志"), 22, C.Text, true)
     sBig.Size = UDim2.fromOffset(leftW - 40, 32); sBig.Position = UDim2.fromOffset(24, 16); sBig.ZIndex = 30
+    if not opts.LoginTitle then self:_bindText(sBig, "settings.logs", "版本更新日志") end
     inst("Frame", sLeft, { Size = UDim2.fromOffset(leftW - 48, 1), Position = UDim2.fromOffset(24, 54),
         BackgroundColor3 = C.Line, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 30 })
     local sRight = inst("Frame", sLayer, { Name = "SettingsArea", Size = UDim2.fromOffset(rightW, bodyH),
@@ -1540,7 +1647,8 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local uname2 = label(sRight, name2, 13, C.Text, true, Enum.TextXAlignment.Left)
     uname2.Name = "SettingsName"; uname2.Size = UDim2.fromOffset(rightW - av2 - 26, 18)
     uname2.Position = UDim2.fromOffset(16 + av2 + 8, 18); uname2.ZIndex = 30
-    local bday = "账号生日: 未知"
+    local bday = self:_t("settings.birthday", "账号生日: 未知")
+    local bdayKnown = false
     pcall(function()
         local Players = game:GetService("Players")
         local lp = Players and Players.LocalPlayer
@@ -1548,21 +1656,26 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         if type(age) == "number" and type(os) == "table" and type(os.time) == "function" and type(os.date) == "function" then
             local created = os.time() - math.floor(age) * 86400
             bday = "账号生日: " .. tostring(os.date("%Y-%m-%d", created))
+            bdayKnown = true
         elseif type(age) == "number" then
             bday = "账号年龄: " .. tostring(math.floor(age)) .. " 天"
+            bdayKnown = true
         end
     end)
     local bdayTx = label(sRight, bday, 10, C.Sub, false, Enum.TextXAlignment.Left)
     bdayTx.Name = "SettingsBirthday"; bdayTx.Size = UDim2.fromOffset(rightW - av2 - 26, 16)
     bdayTx.Position = UDim2.fromOffset(16 + av2 + 8, 38); bdayTx.ZIndex = 30
-    local secTitle = label(sRight, "UI设置", 14, C.Text, true, Enum.TextXAlignment.Left)
+    if not bdayKnown then self:_bindText(bdayTx, "settings.birthday", "账号生日: 未知") end
+    local secTitle = label(sRight, self:_t("settings.title", "UI设置"), 14, C.Text, true, Enum.TextXAlignment.Left)
     secTitle.Name = "SettingsSection"; secTitle.Size = UDim2.fromOffset(rightW - 32, 22)
     secTitle.Position = UDim2.fromOffset(16, av2 + 30); secTitle.ZIndex = 30
+    self:_bindText(secTitle, "settings.title", "UI设置")
     inst("Frame", sRight, { Size = UDim2.fromOffset(rightW - 32, 1), Position = UDim2.fromOffset(16, av2 + 54),
         BackgroundColor3 = C.Line, BackgroundTransparency = 0.3, BorderSizePixel = 0, ZIndex = 30 })
     local minPct, maxPct, pct = 60, 160, 100
-    local scaleCap = label(sRight, "窗口比例", 11, C.Sub, false, Enum.TextXAlignment.Left)
+    local scaleCap = label(sRight, self:_t("settings.scale", "窗口比例"), 11, C.Sub, false, Enum.TextXAlignment.Left)
     scaleCap.Size = UDim2.fromOffset(90, 18); scaleCap.Position = UDim2.fromOffset(16, av2 + 64); scaleCap.ZIndex = 30
+    self:_bindText(scaleCap, "settings.scale", "窗口比例")
     local pctTx = label(sRight, "100%", 11, C.Accent, true, Enum.TextXAlignment.Right)
     pctTx.Name = "ScaleLabel"; pctTx.Size = UDim2.fromOffset(46, 18)
     pctTx.Position = UDim2.fromOffset(rightW - 62, av2 + 64); pctTx.ZIndex = 30
@@ -1573,6 +1686,96 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local sfill = inst("Frame", strack, { Size = UDim2.fromScale((pct - minPct) / (maxPct - minPct), 1),
         BackgroundColor3 = C.Accent, BorderSizePixel = 0, ZIndex = 31 })
     corner(sfill, 3)
+    local langCap = label(sRight, self:_t("settings.language", "界面语言"), 11, C.Sub, false, Enum.TextXAlignment.Left)
+    langCap.Name = "LanguageLabel"; langCap.Size = UDim2.fromOffset(rightW - 32, 18)
+    langCap.Position = UDim2.fromOffset(16, av2 + 110); langCap.ZIndex = 30
+    self:_bindText(langCap, "settings.language", "界面语言")
+    local langBtn = inst("TextButton", sRight, { Name = "LanguageSelect", Size = UDim2.fromOffset(rightW - 32, 28),
+        Position = UDim2.fromOffset(16, av2 + 132), BackgroundColor3 = C.Panel,
+        BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 30 })
+    corner(langBtn, 7); stroke(langBtn, C.Line, 1, 0)
+    local langTx = label(langBtn, self:_langLabelOf(self._lang), 12, C.Text, false, Enum.TextXAlignment.Left)
+    langTx.Name = "LanguageText"; langTx.Size = UDim2.new(1, -26, 1, 0); langTx.Position = UDim2.fromOffset(10, 0); langTx.ZIndex = 31
+    local langChev = inst("ImageLabel", langBtn, { Name = "LanguageChevron", Size = UDim2.fromOffset(13, 13),
+        Position = UDim2.new(1, -21, 0.5, -6), BackgroundTransparency = 1, ZIndex = 31 })
+    applyIcon(langChev, "chevron-down", C.Sub)
+    local langContentH = 8 + #self._languages * 26
+    local langMenuH = math.min(langContentH, 164)
+    local langMenuY = 34 + av2 + 132 + 38
+    if langMenuY + langMenuH > H - 8 then langMenuY = H - 8 - langMenuH end
+    local langMenu = inst("CanvasGroup", main, { Name = "LanguageMenu", Size = UDim2.fromOffset(rightW - 32, langMenuH),
+        Position = UDim2.fromOffset(leftW + 16, langMenuY), BackgroundColor3 = C.Panel,
+        BorderSizePixel = 0, Visible = false, GroupTransparency = 1, ZIndex = 40, Active = true })
+    corner(langMenu, 7); stroke(langMenu, C.Line, 1, 0)
+    local langScroll = inst("ScrollingFrame", langMenu, { Name = "LanguageScroller",
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1, BorderSizePixel = 0,
+        CanvasSize = UDim2.new(0, 0, 0, langContentH),
+        ScrollingDirection = Enum.ScrollingDirection.Y, ScrollBarThickness = 3,
+        HorizontalScrollBarInset = Enum.ScrollBarInset.None,
+        VerticalScrollBarInset = Enum.ScrollBarInset.None,
+        ClipsDescendants = true, ZIndex = 40 })
+    local langRows = {}
+    local closeLangMenu, openLangMenu
+    local langOpen, langOutside = false, nil
+    closeLangMenu = function()
+        if not langOpen then return end
+        langOpen = false
+        if langOutside then pcall(function() langOutside:Disconnect() end); langOutside = nil end
+        fade(langMenu, 1, 0.16, function() if not langOpen then langMenu.Visible = false end end)
+    end
+    openLangMenu = function()
+        if langOpen then closeLangMenu(); return end
+        pcall(function()
+            for _, fn in ipairs(self._closePopups or {}) do if fn ~= closeLangMenu then fn() end end
+        end)
+        langOpen = true
+        langMenu.Visible = true
+        fade(langMenu, 0, 0.16)
+        pcall(function()
+            local uis = game:GetService("UserInputService")
+            if not uis then return end
+            langOutside = uis.InputBegan:Connect(function(input)
+                if not langOpen then return end
+                local t = input and input.UserInputType
+                if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+                local px, py = inputPoint(input)
+                if not hitTest(langBtn, px, py) and not hitTest(langMenu, px, py) then closeLangMenu() end
+            end)
+        end)
+    end
+    self._closePopups = self._closePopups or {}
+    table.insert(self._closePopups, closeLangMenu)
+    for i, l in ipairs(self._languages) do
+        local row = inst("TextButton", langScroll, { Name = "Lang_" .. tostring(l.Code),
+            Size = UDim2.new(1, -8, 0, 24), Position = UDim2.fromOffset(4, 4 + (i - 1) * 26),
+            BackgroundColor3 = Color3.new(1, 1, 1), BackgroundTransparency = 1,
+            BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 41 })
+        corner(row, 5)
+        local rtx = label(row, l.Label, 12, C.Text, false, Enum.TextXAlignment.Left)
+        rtx.Size = UDim2.new(1, -32, 1, 0); rtx.Position = UDim2.fromOffset(10, 0); rtx.ZIndex = 42
+        local ck = inst("ImageLabel", row, { Name = "LangCheck", Size = UDim2.fromOffset(12, 12),
+            Position = UDim2.new(1, -20, 0.5, -6), BackgroundTransparency = 1,
+            Visible = false, ZIndex = 42 })
+        applyIcon(ck, "check", C.Accent)
+        langRows[#langRows + 1] = { code = l.Code, row = row, tx = rtx, check = ck }
+        connect(row.MouseButton1Click, function()
+            self:_applyLanguage(l.Code)
+            closeLangMenu()
+        end)
+    end
+    self._refreshLang = function()
+        pcall(function() langTx.Text = self:_langLabelOf(self._lang) end)
+        for _, r in ipairs(langRows) do
+            local on = r.code == self._lang
+            pcall(function()
+                r.row.BackgroundTransparency = on and 0.86 or 1
+                r.tx.TextColor3 = on and C.Accent or C.Text
+                r.check.Visible = on
+            end)
+        end
+    end
+    connect(langBtn.MouseButton1Click, function() openLangMenu() end)
+    self._refreshLang()
     local pvBaseScale = self._baseScale or 0.65
     local preview = inst("Frame", gui, { Name = "SizePreview", AnchorPoint = Vector2.new(0.5, 0.5),
         Size = UDim2.fromOffset(W * pvBaseScale, H * pvBaseScale), Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -1652,7 +1855,8 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
     local afill = inst("Frame", applyBtn, { Size = UDim2.fromScale(1, 1), BackgroundColor3 = C.Accent,
         BorderSizePixel = 0, ZIndex = 30 })
     corner(afill, 8); grad(afill, C.Accent, Color3.new(1, 1, 1), 0)
-    local atx = label(applyBtn, "应用修改", 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+    local atx = label(applyBtn, self:_t("settings.apply", "应用修改"), 13, Color3.new(1, 1, 1), true, Enum.TextXAlignment.Center)
+    self:_bindText(atx, "settings.apply", "应用修改")
     atx.Name = "ApplyUiText"; atx.Size = UDim2.fromScale(1, 1); atx.ZIndex = 31
     stroke(applyBtn, C.AccentW, 1.2, 0.25)
     connect(applyBtn.MouseButton1Click, function()
@@ -1664,7 +1868,10 @@ function Axiom._buildLogin(self, opts, main, bar, bt, gui, contentLayer, dotList
         }
         hidePreview()
         if type(Axiom.Notify) == "function" then
-            pcall(function() Axiom.Notify({ Title = "设置", Text = "你的设定已保存!", Type = "success", Duration = 2.5 }) end)
+            pcall(function()
+                Axiom.Notify({ Title = self:_t("settings.savedTitle", "设置"),
+                    Text = self:_t("settings.savedText", "你的设定已保存!"), Type = "success", Duration = 2.5 })
+            end)
         end
     end)
     local settingsOpen = false
@@ -1700,6 +1907,54 @@ function Axiom.CreateWindow(opts)
     local holder = resolveHolder()
     if holder then gui.Parent = holder end
     self.gui = gui
+    self._translator = type(opts.Translator) == "function" and opts.Translator or nil
+    self._extraLocales = {}
+    for code, dict in pairs(type(opts.Locales) == "table" and opts.Locales or {}) do
+        if type(code) == "string" and code ~= "" and type(dict) == "table" then
+            self._extraLocales[code] = dict
+        end
+    end
+    local langs, langSeen, langLabel = {}, {}, {}
+    local function addLang(code, label)
+        if type(code) ~= "string" or code == "" then return end
+        if type(label) == "string" and label ~= "" then langLabel[code] = label end
+        if langSeen[code] then return end
+        langSeen[code] = true
+        langs[#langs + 1] = { Code = code, Label = langLabel[code] or LANG_LABELS[code] or code }
+    end
+    addLang("zh", LANG_LABELS.zh); addLang("en", LANG_LABELS.en)
+    for _, l in ipairs(type(opts.Languages) == "table" and opts.Languages or {}) do
+        if type(l) == "string" then
+            addLang(l)
+        elseif type(l) == "table" and type(l.Code) == "string" then
+            addLang(l.Code, l.Label)
+            if type(l.Dict) == "table" then self._extraLocales[l.Code] = l.Dict end
+        end
+    end
+    for i, l in ipairs(langs) do
+        if l.Label == l.Code and LANG_LABELS[l.Code] then l.Label = LANG_LABELS[l.Code] end
+        langs[i] = l
+    end
+    self._languages = langs
+    local wantLang = opts.Lang or opts.DefaultLang or Axiom.DefaultLanguage or "zh"
+    if type(wantLang) ~= "string" or not langSeen[wantLang] then wantLang = "zh" end
+    self._lang = wantLang
+    function self:_t(key, fallback) return langText(self, key, fallback) end
+    function self:_bindText(obj, key, fallback, prop) bindText(self, obj, key, fallback, prop) end
+    function self:_applyLanguage(code) return applyLanguage(self, code) end
+    function self:_langLabelOf(code)
+        for _, l in ipairs(self._languages or {}) do
+            if l.Code == code then return l.Label end
+        end
+        return tostring(code or "")
+    end
+    function self:GetLanguage() return self._lang end
+    function self:SetLanguage(code) return self:_applyLanguage(code) end
+    function self:GetLanguages()
+        local out = {}
+        for i, l in ipairs(self._languages or {}) do out[i] = { Code = l.Code, Label = l.Label } end
+        return out
+    end
     local subFolder = sanitizeName(opts.Folder) or "Default"
     local assetDir = ROOT_FOLDER .. "/" .. subFolder
     local configDir = assetDir .. "/" .. CONFIG_DIR_NAME
@@ -1933,7 +2188,7 @@ function Axiom.CreateWindow(opts)
             end
         end)
     end
-    function self:AddTab(name, icon)
+    function self:AddTab(name, icon, titleKey)
         self._tabCount = self._tabCount + 1
         local i = self._tabCount
         local my = 22 + (i - 1) * 44
@@ -1954,8 +2209,11 @@ function Axiom.CreateWindow(opts)
         local mi = inst("ImageLabel", side, { Size = UDim2.fromOffset(17, 17),
             Position = UDim2.fromOffset(18, my + 5), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(mi, icon or "home", active and C.Accent or C.Sub)
-        local mt = label(side, name or ("Tab " .. i), 13, active and C.Text or C.Sub, active)
+        local tabTitleKey = type(titleKey) == "string" and titleKey ~= "" and titleKey or nil
+        local tabTitle = tabTitleKey and self:_t(tabTitleKey, name) or (name or ("Tab " .. i))
+        local mt = label(side, tabTitle, 13, active and C.Text or C.Sub, active)
         mt.Size = UDim2.fromOffset(120, 24); mt.Position = UDim2.fromOffset(44, my); mt.ZIndex = 3
+        if tabTitleKey then self:_bindText(mt, tabTitleKey, name) end
         local hit = inst("TextButton", side, { Size = UDim2.fromOffset(160, 34),
             Position = UDim2.fromOffset(8, my - 5), BackgroundTransparency = 1,
             BorderSizePixel = 0, Text = "", AutoButtonColor = false, ZIndex = 5 })
@@ -2011,14 +2269,35 @@ function Axiom.CreateWindow(opts)
         local ci = inst("ImageLabel", host, { Size = UDim2.fromOffset(16, 16),
             Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
-        local tx = label(host, o.Title or kind, 13, C.Text, true)
+        local titleKey = type(o.TitleKey) == "string" and o.TitleKey ~= "" and o.TitleKey or nil
+        local titleBase = o.Title or kind
+        local titleText = titleKey and self:_t(titleKey, titleBase)
+            or o.Title or self:_t("control." .. kind, kind)
+        local tx = label(host, titleText, 13, C.Text, true)
         tx.Size = UDim2.fromOffset(210, 20); tx.Position = UDim2.fromOffset(58, y + 4); tx.ZIndex = 3
-        local sub = label(host, o.Desc or "Axiom setting", 10, C.Sub)
+        if titleKey then
+            self:_bindText(tx, titleKey, titleBase)
+        elseif not o.Title then
+            self:_bindText(tx, "control." .. kind, kind)
+        end
+        local descKey = type(o.DescKey) == "string" and o.DescKey ~= "" and o.DescKey or nil
+        local descBase = o.Desc or "Axiom setting"
+        local descText = descKey and self:_t(descKey, descBase)
+            or o.Desc or (kind == "Paragraph" and "" or self:_t("control.desc", "Axiom setting"))
+        local sub = label(host, descText, 10, C.Sub)
         sub.Size = UDim2.fromOffset(230, 16); sub.Position = UDim2.fromOffset(58, y + 22); sub.ZIndex = 3
+        if descKey then
+            self:_bindText(sub, descKey, descBase)
+        elseif not o.Desc and kind ~= "Paragraph" then
+            self:_bindText(sub, "control.desc", "Axiom setting")
+        end
         local rx = W - 176 - 24
         if kind == "Paragraph" then
             sub.Text = o.Text or ""; sub.Size = UDim2.new(1, -300, 0, 30)
             sub.Position = UDim2.fromOffset(58, y + 20); sub.TextWrapped = true
+            if type(o.TextKey) == "string" and o.TextKey ~= "" then
+                self:_bindText(sub, o.TextKey, o.Text or "")
+            end
             function obj:SetText(v) sub.Text = tostring(v or "") end
             function obj:Get() return sub.Text end
         elseif kind == "Toggle" then
@@ -2443,9 +2722,11 @@ function Axiom.CreateWindow(opts)
     local qi = inst("ImageLabel", confirm, { Size = UDim2.fromOffset(22, 22),
         Position = UDim2.fromOffset(18, 16), BackgroundTransparency = 1, ZIndex = 48 })
     applyIcon(qi, "circle-help", C.Accent)
-    local qt = label(confirm, "你要关闭这个脚本吗？", 15, C.Text, true)
+    local qt = label(confirm, self:_t("close.title", "你要关闭这个脚本吗？"), 15, C.Text, true)
+    self:_bindText(qt, "close.title", "你要关闭这个脚本吗？")
     qt.Size = UDim2.fromOffset(250, 26); qt.Position = UDim2.fromOffset(48, 14); qt.ZIndex = 48
-    local qd = label(confirm, "关闭后界面将被销毁，需重新运行脚本。", 11, C.Sub)
+    local qd = label(confirm, self:_t("close.desc", "关闭后界面将被销毁，需重新运行脚本。"), 11, C.Sub)
+    self:_bindText(qd, "close.desc", "关闭后界面将被销毁，需重新运行脚本。")
     qd.Size = UDim2.fromOffset(260, 20); qd.Position = UDim2.fromOffset(18, 42); qd.ZIndex = 48
     local function confirmBtn(txt, y, c1, c2, danger)
         local b = inst("TextButton", confirm, { Size = UDim2.fromOffset(264, 40),
@@ -2459,8 +2740,10 @@ function Axiom.CreateWindow(opts)
         tx.Size = UDim2.fromScale(1, 1); tx.ZIndex = 49
         return b, tx
     end
-    local yesBtn = confirmBtn("关闭窗口", 72, Color3.fromRGB(214, 62, 62), Color3.fromRGB(150, 34, 34), true)
-    local noBtn = confirmBtn("取消", 120, C.Track, C.Row, false)
+    local yesBtn, yesTx = confirmBtn(self:_t("close.yes", "关闭窗口"), 72, Color3.fromRGB(214, 62, 62), Color3.fromRGB(150, 34, 34), true)
+    local noBtn, noTx = confirmBtn(self:_t("close.cancel", "取消"), 120, C.Track, C.Row, false)
+    self:_bindText(yesTx, "close.yes", "关闭窗口")
+    self:_bindText(noTx, "close.cancel", "取消")
     local shade = inst("TextButton", main, { Name = "CloseShade", Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 1,
         BorderSizePixel = 0, Text = "", AutoButtonColor = false, Visible = false, ZIndex = 45 })
