@@ -172,7 +172,7 @@ Axiom.Notify({ Win = Win, TitleKey = "settings.savedTitle", TextKey = "settings.
 | `AddToggle(o)` | 开关 |
 | `AddSlider(o)` | 滑块 |
 | `AddDropdown(o)` | 下拉选择，`Multi = true` 开启多选；展开后点击空白处自动收起 |
-| `AddColorPicker(o)` | HSV 取色器：SV 面板 + 色相条 + 预览 + HEX，支持拖动取色 |
+| `AddColorPicker(o)` | HSV 取色器：SV 面板 + 色相条 + 预览 + HEX，支持拖动取色，点击面板外自动收起 |
 | `AddButton(o)` | 按钮 |
 | `AddParagraph(o)` | 文本段落 |
 
