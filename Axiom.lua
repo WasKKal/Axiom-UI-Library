@@ -180,6 +180,17 @@ local function registerConfig(win, obj, o, kind)
         return obj.Value
     end
     if type(obj.Set) ~= "function" and type(obj.SetValue) == "function" then obj.Set = obj.SetValue end
+    if type(obj.SetValue) ~= "function" and type(obj.Set) == "function" then obj.SetValue = obj.Set end
+    obj._configSync = function()
+        local v = nil
+        if type(obj.Get) == "function" then
+            local ok, got = pcall(obj.Get, obj)
+            if ok then v = got end
+        end
+        if v == nil then v = obj.Value end
+        obj._configCurrent = v
+        syncConfigValue(obj)
+    end
     win._config = win._config or {}
     win._config[key] = obj
     obj._configValue = makeConfigValue(win, key, kind)
@@ -473,7 +484,12 @@ local function bindDrag(control, onMove)
     connect(control.InputEnded, function() release() end)
     return state
 end
+local function touchConfig(obj)
+    local f = obj and obj._configSync
+    if type(f) == "function" then pcall(f) end
+end
 local function emit(obj, value)
+    touchConfig(obj)
     if type(obj._cb) == "function" then pcall(obj._cb, value) end
 end
 local function tweenShadeAlpha(shadeObj, to, dur, done)
@@ -2384,7 +2400,16 @@ function Axiom.CreateWindow(opts)
             if type(o.TextKey) == "string" and o.TextKey ~= "" then
                 self:_bindText(sub, o.TextKey, o.Text or "")
             end
-            function obj:SetText(v) sub.Text = tostring(v or "") end
+            function obj:SetText(v)
+                sub.Text = tostring(v or "")
+                obj.Value = sub.Text
+                touchConfig(obj)
+            end
+            obj.Set = function(_, v, fire)
+                obj:SetText(v)
+                if fire then emit(obj, obj.Value) end
+            end
+            obj.SetValue = obj.Set
             function obj:Get() return sub.Text end
         elseif kind == "Toggle" then
             local on = o.Default and true or false
@@ -2421,7 +2446,12 @@ function Axiom.CreateWindow(opts)
             connect(tr.MouseButton1Click, function()
                 on = not on; obj.Value = on; refresh(); emit(obj, on)
             end)
-            function obj:SetValue(v) on = v and true or false; obj.Value = on; refresh() end
+            function obj:SetValue(v, fire)
+                on = v and true or false; obj.Value = on; refresh()
+                touchConfig(obj)
+                if fire then emit(obj, on) end
+            end
+            obj.Set = obj.SetValue
             function obj:Get() return on end
             registerConfig(self, obj, o, "Toggle")
         elseif kind == "Button" then
@@ -2482,7 +2512,8 @@ function Axiom.CreateWindow(opts)
                 end
             end
             bindDrag(tr, fromInput)
-            function obj:SetValue(v) applyVal(v, false) end
+            function obj:SetValue(v, fire) applyVal(v, fire and true or false); touchConfig(obj) end
+            obj.Set = obj.SetValue
             function obj:Get() return val end
             registerConfig(self, obj, o, "Slider")
         elseif kind == "Dropdown" then
@@ -2594,21 +2625,26 @@ function Axiom.CreateWindow(opts)
             connect(cap.MouseButton1Click, function()
                 if menu.Visible then closeMenu() else openMenu() end
             end)
-            function obj:Set(v)
+            function obj:Set(v, fire)
                 selected = {}
                 if multi and type(v) == "table" then
                     for _, x in ipairs(v) do selected[x] = true end
                 elseif v ~= nil then selected[tostring(v)] = true end
                 refreshChecks(); cur.Text = display(); obj.Value = multi and keys() or keys()[1]
+                touchConfig(obj)
+                if fire then emit(obj, obj.Value) end
             end
+            obj.SetValue = obj.Set
             function obj:Get() return multi and keys() or keys()[1] end
             function obj:Select(name, on)
                 selected[name] = (on == nil) and true or (on and true or false)
                 refreshChecks(); cur.Text = display(); obj.Value = multi and keys() or keys()[1]
+                touchConfig(obj)
             end
             function obj:IsSelected(name) return selected[name] and true or false end
             function obj:ClearSelection()
                 selected = {}; refreshChecks(); cur.Text = display(); obj.Value = multi and {} or nil
+                touchConfig(obj)
             end
             registerConfig(self, obj, o, "Dropdown")
         elseif kind == "ColorPicker" then
@@ -2767,10 +2803,11 @@ function Axiom.CreateWindow(opts)
                 if panel.Visible then closePalette() else openPalette() end
             end)
             refresh(false)
-            function obj:Set(c)
+            function obj:Set(c, fire)
                 if isColor3(c) then
                     h, sat, val = colorToHSV(c)
-                    refresh(false)
+                    refresh(fire and true or false)
+                    if not fire then touchConfig(obj) end
                 end
             end
             obj.SetValue = obj.Set
