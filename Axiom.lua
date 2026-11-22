@@ -2538,8 +2538,8 @@ function Axiom.CreateWindow(opts)
                 local arr = keys()
                 if #arr == 0 then return "Select" end
                 if not multi then return tostring(arr[1]) end
-                if #arr <= 3 then return table.concat(arr, ", ") end
-                return tostring(arr[1]) .. ", " .. tostring(arr[2]) .. ", " .. tostring(arr[3]) .. " +" .. (#arr - 3)
+                if #arr <= 2 then return table.concat(arr, ", ") end
+                return tostring(arr[1]) .. ", " .. tostring(arr[2]) .. " +" .. (#arr - 2)
             end
             local cap = inst("TextButton", host, { Size = UDim2.fromOffset(140, 28),
                 Position = UDim2.fromOffset(rx - 140, y + 6), BackgroundColor3 = C.Panel,
@@ -2785,22 +2785,42 @@ function Axiom.CreateWindow(opts)
                 local t = i and i.UserInputType
                 if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then grab(setHue, i) end
             end)
+            local paletteOpen = false
+            local outsideConn = nil
+            local function dropOutside()
+                if outsideConn then pcall(function() outsideConn:Disconnect() end); outsideConn = nil end
+            end
             local function closePalette()
-                if not panel.Visible then return end
+                if not paletteOpen then return end
+                paletteOpen = false
+                dropOutside()
                 releaseGrab()
-                fade(panel, 1, 0.18, function() panel.Visible = false end)
+                fade(panel, 1, 0.18, function() if not paletteOpen then panel.Visible = false end end)
             end
             local function openPalette()
+                if paletteOpen then return end
                 pcall(function()
                     for _, fn in ipairs(self._closePopups or {}) do if fn ~= closePalette then fn() end end
                 end)
+                paletteOpen = true
                 panel.Visible = true
                 fade(panel, 0, 0.18)
+                pcall(function()
+                    local uis = game:GetService("UserInputService")
+                    if not uis then return end
+                    outsideConn = uis.InputBegan:Connect(function(input)
+                        if not paletteOpen then return end
+                        local t = input and input.UserInputType
+                        if t ~= Enum.UserInputType.MouseButton1 and t ~= Enum.UserInputType.Touch then return end
+                        local px, py = inputPoint(input)
+                        if not hitTest(sw, px, py) and not hitTest(panel, px, py) then closePalette() end
+                    end)
+                end)
             end
             self._closePopups = self._closePopups or {}
             table.insert(self._closePopups, closePalette)
             connect(sw.MouseButton1Click, function()
-                if panel.Visible then closePalette() else openPalette() end
+                if paletteOpen then closePalette() else openPalette() end
             end)
             refresh(false)
             function obj:Set(c, fire)
