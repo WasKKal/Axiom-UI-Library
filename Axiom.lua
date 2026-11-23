@@ -2367,7 +2367,7 @@ function Axiom.CreateWindow(opts)
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
         if type(o.Callback) == "function" then obj._cb = o.Callback end
         local iconTop = (kind == "Paragraph") and (y + 21)
-            or (((o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")) and (y + 16) or (y + 8))
+            or (((o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")) and (y + 16) or (y + 6))
         local ci = inst("ImageLabel", host, { Size = UDim2.fromOffset(16, 16),
             Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
