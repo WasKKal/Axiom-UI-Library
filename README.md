@@ -173,10 +173,21 @@ Axiom.Notify({ Win = Win, TitleKey = "settings.savedTitle", TextKey = "settings.
 | `AddSlider(o)` | 滑块 |
 | `AddDropdown(o)` | 下拉选择，`Multi = true` 开启多选；展开后点击空白处自动收起 |
 | `AddColorPicker(o)` | HSV 取色器：SV 面板 + 色相条 + 预览 + HEX，支持拖动取色，点击面板外自动收起 |
+| `AddInput(o)` | 输入框：左侧标题/描述，右侧圆角输入区；`Default` 默认文本，`Placeholder` 灰色占位文字，`PlaceholderKey` 占位文字翻译键 |
 | `AddButton(o)` | 按钮 |
 | `AddParagraph(o)` | 文本段落 |
 
-控件对象统一提供 `SetValue` / `Set` / `Get` / `Callback` 等方法，下拉另含 `Select` / `ClearSelection` / `IsSelected`。给控件传 `o.ConfigKey = "xxx"` 即纳入配置管理（Toggle / Slider / Dropdown / ColorPicker）。
+```lua
+local Name = Tab:AddInput({
+    Title = "名字", Desc = "显示名称", Icon = "text-cursor-input",
+    Default = "Player", Placeholder = "输入名字", ConfigKey = "name",
+    Callback = function(v) print("名字改为", v) end,
+})
+Name:Set("Axiom")
+print(Name:Get())
+```
+
+控件对象统一提供 `SetValue` / `Set` / `Get` / `Callback` 等方法，下拉另含 `Select` / `ClearSelection` / `IsSelected`。给控件传 `o.ConfigKey = "xxx"` 即纳入配置管理（Toggle / Slider / Dropdown / ColorPicker / Input）。
 
 #### 动态改值
 
@@ -197,8 +208,9 @@ Slider:Get()               -- 读取当前值
 | `AddSlider` | `SetValue(v[, fire])` / `Set` | `Get()` | 超出 `Min`~`Max` 自动夹取 |
 | `AddDropdown` | `Set(v[, fire])` / `SetValue` | `Get()` | 单选传字符串，多选传数组；另有 `Select` / `ClearSelection` / `IsSelected` |
 | `AddColorPicker` | `Set(c[, fire])` / `SetValue` | `Get()` | 仅接受 `Color3`，非法值忽略 |
+| `AddInput` | `Set(v[, fire])` / `SetValue` | `Get()` | `Get()` 实时返回输入框内容；用户键入时自动同步 `Value` 并触发 `Callback` |
 
-`fire` 省略时为静默改值，只更新界面与状态，不触发 `Callback`，适合“程序回填”场景；传 `true` 时按用户操作处理，回调收到新值。带 `ConfigKey` 的 Toggle / Slider / Dropdown / ColorPicker 在改值时会同步刷新 `Config` 文件夹中对应的 `BoolValue` / `NumberValue` / `StringValue` / `Color3Value`，`SaveConfig` 落到文件的值也是最新值。
+`fire` 省略时为静默改值，只更新界面与状态，不触发 `Callback`，适合“程序回填”场景；传 `true` 时按用户操作处理，回调收到新值。带 `ConfigKey` 的 Toggle / Slider / Dropdown / ColorPicker / Input 在改值时会同步刷新 `Config` 文件夹中对应的 `BoolValue` / `NumberValue` / `StringValue` / `Color3Value`，`SaveConfig` 落到文件的值也是最新值。
 
 
 ### Config（Window 方法）
