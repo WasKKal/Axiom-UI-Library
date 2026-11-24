@@ -2369,8 +2369,9 @@ function Axiom.CreateWindow(opts)
         detail.CanvasSize = UDim2.new(0, 0, 0, math.max(H - 34, y + 60))
         local obj = { Value = o.Default, _kind = kind, _cb = nil, _win = self }
         if type(o.Callback) == "function" then obj._cb = o.Callback end
+        local hasInfo = (o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")
         local iconTop = (kind == "Paragraph") and (y + 21)
-            or (((o.Desc ~= nil and o.Desc ~= "") or (o.Info ~= nil and o.Info ~= "")) and (y + 16) or (y + 6))
+            or (hasInfo and (y + 16) or (y + 6))
         local ci = inst("ImageLabel", host, { Size = UDim2.fromOffset(16, 16),
             Position = UDim2.fromOffset(24, iconTop), BackgroundTransparency = 1, ZIndex = 3 })
         applyIcon(ci, o.Icon or DEFAULT_ICONS[kind], C.Sub)
@@ -2523,8 +2524,8 @@ function Axiom.CreateWindow(opts)
             local def = o.Default ~= nil and tostring(o.Default) or (o.Value ~= nil and tostring(o.Value) or "")
             local placeholder = o.Placeholder or o.PlaceholderText or ""
             obj.Value = def
-            local field = inst("Frame", host, { Name = "InputField", Size = UDim2.fromOffset(140, 28),
-                Position = UDim2.fromOffset(rx - 140, y + 6), BackgroundColor3 = C.Panel,
+            local field = inst("Frame", host, { Name = "InputField", Size = UDim2.fromOffset(140, hasInfo and 40 or 28),
+                Position = UDim2.fromOffset(rx - 140, y + (hasInfo and 2 or 6)), BackgroundColor3 = C.Panel,
                 BorderSizePixel = 0, ZIndex = 3 })
             corner(field, 7); stroke(field, C.Line, 1, 0)
             local box = inst("TextBox", field, { Name = "InputBox", Size = UDim2.new(1, -20, 1, 0),
