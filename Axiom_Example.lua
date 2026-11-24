@@ -40,8 +40,8 @@ local Win = Axiom.CreateWindow({
     Lang = "zh",
     Languages = { { Code = "ja", Label = "日本語" } },
     Locales = {
-        en = { ["demo.master"] = "Master Switch", ["demo.masterDesc"] = "Enable all features" },
-        ja = { ["demo.master"] = "メインスイッチ" },
+        en = { ["demo.master"] = "Master Switch", ["demo.masterDesc"] = "Enable all features", ["demo.inputPh"] = "Enter player name" },
+        ja = { ["demo.master"] = "メインスイッチ", ["demo.inputPh"] = "プレイヤー名を入力" },
     },
     -- KeySystem演示 输入框占位文字可改 点击左侧 user-key 图标可自定义行为
     -- 把 KeyCheck 换成自己的后端接口 或写 KeyAPI = { Provider = "Luarmor", ScriptId = "..." }
@@ -111,11 +111,18 @@ local Dropdown = Tab:AddDropdown({
     Callback = function(list) toast("主题预设", "已选 " .. table.concat(list, "、"), "success") end,
 })
 
---颜色选择器
+--颜色选择器 支持拖动取色 点击面板外空白处自动收起
 Tab:AddColorPicker({
     Title = "Accent Color", Desc = "强调色", Icon = "palette",
     Default = Color3.fromRGB(88, 150, 255), ConfigKey = "accent",
     Callback = function(c) toast("强调色", "RGB(" .. math.floor(c.R * 255) .. ", " .. math.floor(c.G * 255) .. ", " .. math.floor(c.B * 255) .. ")", "info") end,
+})
+--输入框控件 左侧标题/描述 右侧圆角框 有描述时自动增高
+local Input = Tab:AddInput({
+    Title = "Player Name", Desc = "玩家名称", Icon = "text-cursor-input",
+    Default = "Axiom", Placeholder = "输入玩家名称", PlaceholderKey = "demo.inputPh",
+    ConfigKey = "playerName", --纳入配置管理
+    Callback = function(v) toast("玩家名称", "当前输入：" .. v, "info") end,
 })
 Tab:AddButton({
     Title = "Apply", Desc = "应用设置", Icon = "send",
@@ -123,6 +130,8 @@ Tab:AddButton({
 })
 Slider:SetValue(120) --设定Slider的值
 Dropdown:Select("Mono", true)-- 设定下拉菜单当前选中项
+Input:Set("Axiom") --设定输入框的值(静默 不触发回调)
+print("Input value:", Input:Get()) --读取输入框当前值
 
 -- 另一个选项卡 也是控件演示 不过多注释了
 local TabVisual = Win:AddTab("Appearance", "palette")
