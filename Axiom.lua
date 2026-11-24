@@ -361,7 +361,7 @@ local function applyIcon(imageLabel, icon, color)
 end
 local DEFAULT_ICONS = {
     Toggle = "toggle-right", Button = "send", Slider = "gauge",
-    Dropdown = "list-filter", Paragraph = "align-left", ColorPicker = "palette",
+    Dropdown = "list-filter", Paragraph = "align-left", ColorPicker = "palette", Input = "text-cursor-input",
     General = "sliders-horizontal", Visual = "palette", System = "monitor",
 }
 local function resolveHolder()
@@ -733,6 +733,7 @@ local LOCALES = {
         ["control.Dropdown"] = "下拉菜单",
         ["control.Paragraph"] = "段落",
         ["control.ColorPicker"] = "取色器",
+        ["control.Input"] = "输入框",
         ["control.desc"] = "Axiom 设置",
     },
     en = {
@@ -785,6 +786,7 @@ local LOCALES = {
         ["control.Dropdown"] = "Dropdown",
         ["control.Paragraph"] = "Paragraph",
         ["control.ColorPicker"] = "Color Picker",
+        ["control.Input"] = "Input",
         ["control.desc"] = "Axiom setting",
     },
 }
@@ -2330,6 +2332,7 @@ function Axiom.CreateWindow(opts)
         function tab:AddDropdown(o) return self._win:_row("Dropdown", o, self) end
         function tab:AddParagraph(o) return self._win:_row("Paragraph", o, self) end
         function tab:AddColorPicker(o) return self._win:_row("ColorPicker", o, self) end
+        function tab:AddInput(o) return self._win:_row("Input", o, self) end
         return tab
     end
     function self:SelectTab(tab)
@@ -2516,6 +2519,41 @@ function Axiom.CreateWindow(opts)
             obj.Set = obj.SetValue
             function obj:Get() return val end
             registerConfig(self, obj, o, "Slider")
+        elseif kind == "Input" then
+            local def = o.Default ~= nil and tostring(o.Default) or (o.Value ~= nil and tostring(o.Value) or "")
+            local placeholder = o.Placeholder or o.PlaceholderText or ""
+            obj.Value = def
+            local field = inst("Frame", host, { Name = "InputField", Size = UDim2.fromOffset(140, 28),
+                Position = UDim2.fromOffset(rx - 140, y + 6), BackgroundColor3 = C.Panel,
+                BorderSizePixel = 0, ZIndex = 3 })
+            corner(field, 7); stroke(field, C.Line, 1, 0)
+            local box = inst("TextBox", field, { Name = "InputBox", Size = UDim2.new(1, -20, 1, 0),
+                Position = UDim2.fromOffset(10, 0), BackgroundTransparency = 1, Text = def,
+                PlaceholderText = placeholder, PlaceholderColor3 = C.Sub, TextColor3 = C.Text,
+                TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
+                TextYAlignment = Enum.TextYAlignment.Center, ClearTextOnFocus = false, ZIndex = 4 })
+            if type(o.PlaceholderKey) == "string" and o.PlaceholderKey ~= "" then
+                self:_bindText(box, o.PlaceholderKey, placeholder, "PlaceholderText")
+            end
+            local internal = false
+            connect(box:GetPropertyChangedSignal("Text"), function()
+                if internal then return end
+                obj.Value = box.Text
+                touchConfig(obj)
+                emit(obj, obj.Value)
+            end)
+            function obj:Set(v, fire)
+                local s = tostring(v or "")
+                internal = true
+                box.Text = s
+                internal = false
+                obj.Value = s
+                touchConfig(obj)
+                if fire then emit(obj, s) end
+            end
+            obj.SetValue = obj.Set
+            function obj:Get() return box.Text end
+            registerConfig(self, obj, o, "Input")
         elseif kind == "Dropdown" then
             local options = o.Options or {}
             local multi = o.Multi and true or false
