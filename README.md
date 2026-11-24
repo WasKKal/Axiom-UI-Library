@@ -173,7 +173,7 @@ Axiom.Notify({ Win = Win, TitleKey = "settings.savedTitle", TextKey = "settings.
 | `AddSlider(o)` | 滑块 |
 | `AddDropdown(o)` | 下拉选择，`Multi = true` 开启多选；展开后点击空白处自动收起 |
 | `AddColorPicker(o)` | HSV 取色器：SV 面板 + 色相条 + 预览 + HEX，支持拖动取色，点击面板外自动收起 |
-| `AddInput(o)` | 输入框：左侧标题/描述，右侧圆角输入区；`Default` 默认文本，`Placeholder` 灰色占位文字，`PlaceholderKey` 占位文字翻译键 |
+| `AddInput(o)` | 输入框：左侧标题/描述，右侧圆角输入区（有 `Desc` / `Info` 时自动增高以对齐两行文字）；`Default` 默认文本，`Placeholder` 灰色占位文字，`PlaceholderKey` 占位文字翻译键 |
 | `AddButton(o)` | 按钮 |
 | `AddParagraph(o)` | 文本段落 |
 
